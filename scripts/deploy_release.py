@@ -1,5 +1,6 @@
 """Fetch a hash-pinned public source release via proxy, verify, then launch a role."""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -33,7 +34,17 @@ def main():
     else:
         a.source.mkdir(parents=True,exist_ok=False)
         archive=a.source.parent/(a.source.name+'.tar.gz')
-        subprocess.run(['curl','--fail','--location','--retry','3','--proxy',a.proxy,'--output',str(archive),a.url],check=True)
+        transport=archive.with_suffix('.download') if '.json' in a.url.split('?')[0] else archive
+        subprocess.run(['curl','--fail','--location','--retry','4','--retry-all-errors','--retry-delay','2',
+                        '--connect-timeout','20','--max-time','120','--max-filesize','10485760',
+                        '--proxy',a.proxy,'--output',str(transport),a.url],check=True)
+        if transport!=archive:
+            bundle=json.loads(transport.read_text())
+            if bundle['source_revision']!=a.revision or bundle['archive_sha256']!=a.sha256:
+                raise ValueError('Source bundle identity mismatch')
+            data=base64.b64decode(bundle['archive_base64'],validate=True)
+            if hashlib.sha256(data).hexdigest()!=a.sha256: raise ValueError('Decoded archive checksum mismatch')
+            with archive.open('xb') as stream: stream.write(data)
         if digest(archive)!=a.sha256: raise ValueError('Source archive SHA-256 mismatch')
         with tarfile.open(archive) as tar:
             for item in tar.getmembers():

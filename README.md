@@ -76,3 +76,7 @@ scoring, refit and updates. `--watch --output PATH --detach` maintains an atomic
 summary on shared storage until the queue completes or a failure marker appears.
 A newer reporting overlay can inspect a run frozen to an older training commit;
 both source revisions remain in their respective receipts.
+
+When the proxy cannot reach the HF binary CDN, `source-bundle.json` transports
+the same Git archive as base64 through HF's regular text-file endpoint. The
+deployer validates both Git revision and decoded archive SHA-256 before use.
