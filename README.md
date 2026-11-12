@@ -67,3 +67,10 @@ The source bundle contains no models, datasets, runtime, credentials or run
 results. Publish the verified Git commit first, archive it, upload the archive
 and its SHA-256 manifest to Hugging Face, then fetch the pinned HF revision on
 nodes through the supplied proxy. Source and runtime have separate provenance.
+
+A read-only evidence aggregator is available as `src/speed_limit/report.py RUN`.
+It reports partial progress explicitly and separates cache generation, teacher
+scoring, refit and updates. `--watch --output PATH --detach` maintains an atomic
+summary on shared storage until the queue completes or a failure marker appears.
+A newer reporting overlay can inspect a run frozen to an older training commit;
+both source revisions remain in their respective receipts.

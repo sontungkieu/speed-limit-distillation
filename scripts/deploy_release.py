@@ -19,6 +19,7 @@ def main():
     p=argparse.ArgumentParser()
     for key in ('url','sha256','revision','proxy','gpu'): p.add_argument('--'+key,required=True)
     for key in ('source','run','inputs'): p.add_argument('--'+key,type=Path,required=True)
+    p.add_argument('--stage-only',action='store_true')
     p.add_argument('--role',type=int,required=True); a=p.parse_args()
     write_root=Path('/workspace/storage-shared/nlp/tungks').resolve()
     for path in (a.source,a.run):
@@ -40,6 +41,8 @@ def main():
             tar.extractall(a.source,filter='data')
         files={str(path.relative_to(a.source)):digest(path) for path in a.source.rglob('*') if path.is_file()}
         receipt.write_text(json.dumps({'revision':a.revision,'sha256':a.sha256,'url':a.url,'files':files},indent=2))
+    if a.stage_only:
+        print(json.dumps({'source':str(a.source),'revision':a.revision,'sha256':a.sha256,'staged':True})); return
     env=os.environ.copy(); env['PYTHONPATH']=str(a.source/'src')+':'+str(a.inputs/'runtime/src')
     subprocess.run([str(a.inputs/'runtime/envs/vllm/bin/python'),'-m','speed_limit.queue','--source',str(a.source),
         '--inputs',str(a.inputs),'--run',str(a.run),'--role',str(a.role),'--gpu',a.gpu,'--revision',a.revision,'--detach'],env=env,check=True)
