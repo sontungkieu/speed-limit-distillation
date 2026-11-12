@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "project": "speed-limit-distillation",
+  "phase": "phase0",
+  "status": "contract-staged",
+  "hardware": {"minimum_b200": 1, "parallel_b200": 3},
+  "student": {"repo": "Qwen/Qwen3-1.7B", "mode": "non_thinking"},
+  "teacher": {"repo": "Qwen/Qwen3-4B-Instruct-2507"},
+  "training_data": {"repo": "open-r1/DAPO-Math-17k-Processed", "rows": 14116},
+  "objectives": ["sampled_token_reverse_kl", "top64_control"],
+  "phase0": {
+    "rollout_cap": 4096,
+    "planned_semi_steps": 100,
+    "planned_opd_steps": 10,
+    "checkpoints": [60, 80, 100],
+    "pool_prompts": 2048,
+    "held_out_rollouts": 256,
+    "fresh_rollouts_every_steps": 50,
+    "fresh_rollout_count": 128,
+    "dev_eval": "AIME24+AIME25 avg@8"
+  },
+  "provenance": {
+    "runtime": "reuse existing verified v070-r1 runtime",
+    "author_equivalence": "unverified",
+    "training_performed": false
+  }
+}
