@@ -1,6 +1,6 @@
 import unittest
 import torch
-from speed_limit.cache import validate_cache
+from speed_limit.cache import validate_cache, validate_tensor_file
 from speed_limit.lanczos import lanczos_top_eigenpairs, gradient_gram, adam_preconditioner
 from speed_limit.metrics import absorption_curve, absorption_times, aggregate_benchmark_accuracy
 from speed_limit.phase0 import top64_kl, distribution
@@ -33,6 +33,20 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_cache([row,row])
         with self.assertRaises(ValueError): validate_cache([{**row,'top64_ids':torch.empty(0)}])
         with self.assertRaises(ValueError): validate_cache([{**row,'teacher_logprobs':torch.tensor([float('nan')])}])
+
+    def test_serialized_cache_probability_alignment(self):
+        import tempfile
+        from pathlib import Path
+        logp=torch.randn(2,80).log_softmax(-1); top,ids=logp.topk(64,dim=-1)
+        response=ids[:,3]
+        row={'schema_version':2,'row_id':7,'prompt':[1,2],'response':response.tolist(),
+             'teacher_logprobs':logp.gather(-1,response[:,None]).flatten(),
+             'top64_ids':ids.int(),'top64_logprobs':top,'finish_reason':'length','initial_student':True}
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'batch.pt'; torch.save([row],path)
+            self.assertEqual(validate_tensor_file(path,1)['tokens'],2)
+            row['teacher_logprobs']=row['teacher_logprobs']-.5; torch.save([row],path)
+            with self.assertRaises(ValueError): validate_tensor_file(path,1)
 
     def test_kl_gradient_and_support_normalization(self):
         a=torch.tensor([[2.,0.,-1.]],requires_grad=True); b=torch.tensor([[0.,1.,-2.]])

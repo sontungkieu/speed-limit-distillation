@@ -36,3 +36,35 @@ def read_jsonl(path):
     with Path(path).open() as stream:
         for line in stream:
             if line.strip(): yield json.loads(line)
+
+
+def validate_tensor_file(path, expected_rows=None):
+    """Exercise weights-only deserialization and probability/ID alignment on disk."""
+    path=Path(path)
+    records=torch.load(path,map_location='cpu',weights_only=True)
+    result=validate_cache(records,expected_rows)
+    tokens=longest=matched=0
+    for record in records:
+        top=record['top64_logprobs']; ids=record['top64_ids'].long()
+        response=torch.tensor(record['response'],dtype=torch.long)
+        locations=ids==response[:,None]; active=locations.any(-1)
+        if (top.exp().sum(-1)>1.0001).any(): raise ValueError('teacher candidate mass exceeds one')
+        if active.any():
+            selected=top[active].gather(-1,locations[active].long().argmax(-1)[:,None]).flatten()
+            if not torch.allclose(selected,record['teacher_logprobs'][active],atol=1e-5,rtol=0):
+                raise ValueError('sampled logp disagrees with matching top64 token')
+        matched+=int(active.sum()); n=len(response); tokens+=n; longest=max(longest,n)
+    digest=hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda:stream.read(1<<20),b''): digest.update(block)
+    result.update(tokens=tokens,longest_response=longest,sampled_tokens_in_teacher_top64=matched,file_sha256=digest.hexdigest())
+    return result
+
+
+def main():
+    import argparse
+    parser=argparse.ArgumentParser(); parser.add_argument('--file',type=Path,required=True)
+    parser.add_argument('--expected-rows',type=int); args=parser.parse_args()
+    print(json.dumps(validate_tensor_file(args.file,args.expected_rows),allow_nan=False))
+
+if __name__=='__main__': main()

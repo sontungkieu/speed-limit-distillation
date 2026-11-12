@@ -80,3 +80,12 @@ both source revisions remain in their respective receipts.
 When the proxy cannot reach the HF binary CDN, `source-bundle.json` transports
 the same Git archive as base64 through HF's regular text-file endpoint. The
 deployer validates both Git revision and decoded archive SHA-256 before use.
+
+Validate actual saved cache shards without loading a GPU model:
+
+```bash
+PYTHONPATH=src python -m speed_limit.cache --file /path/to/batch-00000.pt --expected-rows 32
+```
+
+This checks weights-only tensor deserialization, token alignment, candidate
+probability mass and agreement between sampled logp and matching top-64 IDs.
