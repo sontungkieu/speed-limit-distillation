@@ -1,0 +1,9 @@
+{
+  "artifact": "speed-limit-distillation-phase0",
+  "source_repo": "https://github.com/sontungkieu/speed-limit-distillation",
+  "source_commit": "ecad201",
+  "contents": ["README.md", "experiment-plan.md", "configs/phase0-contract.json"],
+  "training_performed": false,
+  "models_or_credentials": false,
+  "intended_consumer": "company node via existing proxy"
+}
