@@ -53,6 +53,11 @@ def top64_kl(student, teacher):
 
 class Phase0(Experiment):
     def __init__(self, args):
+        expected=os.environ.get('SPEED_LIMIT_GPU_UUID')
+        actual=str(torch.cuda.get_device_properties(0).uuid)
+        if not expected or actual.lower().removeprefix('gpu-')!=expected.lower().removeprefix('gpu-'):
+            raise RuntimeError(f'CUDA GPU UUID mismatch: expected {expected}, actual {actual}')
+        print('VERIFIED_GPU',actual,'visible_index',os.environ.get('CUDA_VISIBLE_DEVICES'),flush=True)
         import numpy as np
         import pyarrow.parquet as pq
         from transformers import AutoTokenizer, AutoModelForCausalLM

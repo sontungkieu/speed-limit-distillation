@@ -15,12 +15,22 @@ def save(path,value):
     tmp=path.with_suffix('.partial'); tmp.write_text(json.dumps(value,indent=2)); tmp.replace(path)
 
 
+def resolve_gpu_index(uuid, inventory):
+    matches=[line.split(',')[0].strip() for line in inventory.splitlines()
+             if len(line.split(','))==2 and line.split(',')[1].strip()==uuid]
+    if len(matches)!=1 or not matches[0].isdigit():
+        raise ValueError('GPU UUID must map to exactly one numeric NVML index')
+    return matches[0]
+
+
 def environment(args):
     runtime=args.inputs/'runtime'; cache=args.run/'compile-cache'/f'role-{args.role}'
     short=args.inputs.parent.parent/'tmp'/('sl'+hashlib.sha256(str(args.run).encode()).hexdigest()[:8])/str(args.role)
     short.mkdir(parents=True,exist_ok=True); cache.mkdir(parents=True,exist_ok=True)
+    inventory=subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid','--format=csv,noheader'],text=True)
+    index=resolve_gpu_index(args.gpu,inventory)
     env=os.environ.copy()
-    env.update({'CUDA_VISIBLE_DEVICES':args.gpu,'CUDA_HOME':str(runtime/'cuda'),
+    env.update({'CUDA_VISIBLE_DEVICES':index,'CUDA_DEVICE_ORDER':'PCI_BUS_ID','SPEED_LIMIT_GPU_UUID':args.gpu,'CUDA_HOME':str(runtime/'cuda'),
         'PATH':str(runtime/'cuda/bin')+':'+env.get('PATH',''),'CPLUS_INCLUDE_PATH':str(runtime/'cuda/include/cccl'),
         'PYTHONPATH':str(args.source/'src')+':'+str(runtime/'src'),'NEMO_RL_PREBUILT_ENV_ROOT':str(runtime),
         'TMPDIR':str(short),'TMP':str(short),'TEMP':str(short),'VLLM_RPC_BASE_PATH':str(short),

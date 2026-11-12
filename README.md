@@ -43,7 +43,9 @@ prediction are future research gates; a passing toy test does not establish them
 No local model downloads or environment builds are needed. On each selected
 node, use its existing runtime interpreter and set `PYTHONPATH` to this repo's
 `src`. Each role receives one physical GPU UUID; the queue refuses a GPU with
-compute processes or more than 1 GiB allocated. Provide fresh run/source paths.
+compute processes or more than 1 GiB allocated. The controller resolves that
+UUID to a numeric index for vLLM and each model process verifies the CUDA-visible
+UUID against the requested physical GPU before loading any model. Provide fresh run/source paths.
 
 ```bash
 PYTHONPATH="$SOURCE/src" "$INPUTS/runtime/envs/vllm/bin/python" \

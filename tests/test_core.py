@@ -5,8 +5,15 @@ from speed_limit.lanczos import lanczos_top_eigenpairs, gradient_gram, adam_prec
 from speed_limit.metrics import absorption_curve, absorption_times, aggregate_benchmark_accuracy
 from speed_limit.phase0 import top64_kl, distribution
 from speed_limit.legacy import check_objective
+from speed_limit.queue import resolve_gpu_index
 
 class CoreTests(unittest.TestCase):
+    def test_gpu_uuid_resolves_to_numeric_index_for_vllm(self):
+        inventory='0, GPU-first\n1, GPU-second\n'
+        self.assertEqual(resolve_gpu_index('GPU-second',inventory),'1')
+        with self.assertRaises(ValueError): resolve_gpu_index('GPU-absent',inventory)
+        with self.assertRaises(ValueError): resolve_gpu_index('GPU-second',inventory+'2, GPU-second\n')
+
     def test_absorption_censoring_and_actual_steps(self):
         curve=absorption_curve(torch.tensor([[4.,2.],[2.,1.],[.2,.1]]))
         result=absorption_times(curve,[0,10,20])
