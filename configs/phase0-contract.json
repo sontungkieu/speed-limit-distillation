@@ -2,17 +2,35 @@
   "schema_version": 1,
   "project": "speed-limit-distillation",
   "phase": "phase0",
-  "status": "contract-staged",
-  "hardware": {"minimum_b200": 1, "parallel_b200": 3},
-  "student": {"repo": "Qwen/Qwen3-1.7B", "mode": "non_thinking"},
-  "teacher": {"repo": "Qwen/Qwen3-4B-Instruct-2507"},
-  "training_data": {"repo": "open-r1/DAPO-Math-17k-Processed", "rows": 14116},
-  "objectives": ["sampled_token_reverse_kl", "top64_control"],
+  "status": "implemented-pending-remote-validation",
+  "hardware": {
+    "minimum_b200": 1,
+    "parallel_b200": 3
+  },
+  "student": {
+    "repo": "Qwen/Qwen3-1.7B",
+    "mode": "non_thinking"
+  },
+  "teacher": {
+    "repo": "Qwen/Qwen3-4B-Instruct-2507"
+  },
+  "training_data": {
+    "repo": "open-r1/DAPO-Math-17k-Processed",
+    "rows": 14116
+  },
+  "objectives": [
+    "sampled_token_reverse_kl",
+    "top64_control"
+  ],
   "phase0": {
     "rollout_cap": 4096,
     "planned_semi_steps": 100,
     "planned_opd_steps": 10,
-    "checkpoints": [60, 80, 100],
+    "checkpoints": [
+      60,
+      80,
+      100
+    ],
     "pool_prompts": 2048,
     "held_out_rollouts": 256,
     "fresh_rollouts_every_steps": 50,
@@ -23,5 +41,33 @@
     "runtime": "reuse existing verified v070-r1 runtime",
     "author_equivalence": "unverified",
     "training_performed": false
+  },
+  "optimizer": {
+    "name": "AdamW",
+    "lr": 1e-06,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "weight_decay": 0.01,
+    "clip": 1.0,
+    "global_batch_size": 128,
+    "parameter_dtype": "float32",
+    "compute_dtype": "bfloat16"
+  },
+  "cache": {
+    "schema_version": 2,
+    "format": "torch weights_only tensors",
+    "candidate_support": "teacher top64 fixed at initial rollout states",
+    "logprobs_dtype": "float32",
+    "all_response_tokens_including_returned_eos": true
+  },
+  "measurement": {
+    "every_steps": 10,
+    "step_zero": true,
+    "mean_weighting": "token",
+    "threshold_comparison": "strict below",
+    "missing_crossings": "censored",
+    "scope": "diagnostic S0 under global Semi, not repeated-S"
   }
 }

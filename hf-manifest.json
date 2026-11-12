@@ -1,9 +1,14 @@
 {
-  "artifact": "speed-limit-distillation-phase0",
-  "source_repo": "https://github.com/sontungkieu/speed-limit-distillation",
-  "source_commit": "ecad201",
-  "contents": ["README.md", "experiment-plan.md", "configs/phase0-contract.json"],
-  "training_performed": false,
-  "models_or_credentials": false,
-  "intended_consumer": "company node via existing proxy"
+  "artifact_type": "source-only",
+  "source_repository": "https://github.com/sontungkieu/speed-limit-distillation",
+  "source_revision": "see outer release-manifest.json accompanying the archive",
+  "models_included": false,
+  "datasets_included": false,
+  "credentials_included": false,
+  "runtime_included": false,
+  "runtime_reference": {
+    "repository": "codemaivanngu/nemo-rl-v070-b200-runtime",
+    "revision": "baa9ec626ec0c565316960cfc8091beb0393adba",
+    "archive_sha256": "f5d78bebdd9a0cda5828d39fa09f44a9c3ef47cd09ff6209ad4183d5295a6a10"
+  }
 }
