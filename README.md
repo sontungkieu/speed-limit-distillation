@@ -104,7 +104,7 @@ receipts in the fresh attempt directory. Add `--dev` for AIME24/25 avg@8.
 When moving a job previously scheduled by `watch-and-launch-step100.sh`, use
 `--retire-watch-run RUN --retirement-receipt FRESH_JSON` on that watcher's host.
 The retirement checks the PID's command line before stopping the owned watcher.
-To continue a stopped evaluator, add `--resume-eval PRIOR_RESULT_DIR`.
+To continue a stopped evaluator, add `--prior-result PRIOR_RESULT_DIR`.
 The launcher validates the previous run settings and reuses complete four-prompt
 batches. A partially written batch is generated again with the original seed.
 

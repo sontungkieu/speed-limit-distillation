@@ -68,13 +68,13 @@ def evaluate(args):
             '--checkpoint-step', str(args.step)]
     if args.dev:
         argv.append('--dev')
-    if args.resume_eval:
-        prior = json.loads((args.resume_eval / 'started.json').read_text())
+    if args.prior_result:
+        prior = json.loads((args.prior_result / 'started.json').read_text())
         if (prior['checkpoint'] != str(checkpoint) or prior['checkpoint_step'] != args.step
                 or prior['inputs'] != str(args.inputs) or prior['seed'] != 0
                 or prior['dev'] != args.dev or prior['task'] != 'evaluate' or prior['canary']):
             raise ValueError('Previous evaluation contract differs')
-        argv.extend(['--resume-eval', str(args.resume_eval / f'eval-step-{args.step:04d}.jsonl')])
+        argv.extend(['--resume-eval', str(args.prior_result / f'eval-step-{args.step:04d}.jsonl')])
     state = {'pid': os.getpid(), 'hostname': os.uname().nodename, 'gpu': args.gpu,
              'gpu_index': index, 'step': args.step, 'dev': args.dev, 'started_at': time.time(),
              'runner_revision': runner_receipt['revision'], 'launcher_revision': args.revision,
@@ -115,7 +115,7 @@ def main():
     parser.add_argument('--gpu')
     parser.add_argument('--revision')
     parser.add_argument('--dev', action='store_true')
-    parser.add_argument('--resume-eval', type=Path)
+    parser.add_argument('--prior-result', type=Path)
     parser.add_argument('--detach', action='store_true')
     args = parser.parse_args()
     if args.retire_watch_run:
