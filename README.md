@@ -89,3 +89,18 @@ PYTHONPATH=src python -m speed_limit.cache --file /path/to/batch-00000.pt --expe
 
 This checks weights-only tensor deserialization, token alignment, candidate
 probability mass and agreement between sampled logp and matching top-64 IDs.
+
+Move a checkpoint evaluation to another allocated GPU with the detached launcher:
+
+```bash
+python scripts/run_checkpoint.py --inputs "$INPUTS" --runner-source "$RUNNER_SOURCE" \
+  --training-run "$RUN" --output "$ATTEMPT" --step 100 --gpu "$GPU_UUID" \
+  --revision "$LAUNCHER_COMMIT" --detach
+```
+
+The launcher reuses the qualified runner's environment, checks the checkpoint
+ready marker and GPU availability, and records process, progress and completion
+receipts in the fresh attempt directory. Add `--dev` for AIME24/25 avg@8.
+When moving a job previously scheduled by `watch-and-launch-step100.sh`, use
+`--retire-watch-run RUN --retirement-receipt FRESH_JSON` on that watcher's host.
+The retirement checks the PID's command line before stopping the owned watcher.
