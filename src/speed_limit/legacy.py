@@ -137,9 +137,22 @@ class Experiment:
         summary = {}
         samples = 1 if self.args.canary else (8 if self.args.dev else 32)
         cap = 64 if self.args.canary else (16384 if self.args.dev else 32768)
+        saved = {}
+        if getattr(self.args, 'resume_eval', None):
+            from .eval_resume import load_batches
+            saved = load_batches(self.args.resume_eval, self.benchmarks, samples,
+                                 self.args.seed, step)
+            print('EVAL_REUSED_SAMPLES', sum(map(len, saved.values())), flush=True)
         for name, rows in self.benchmarks.items():
             correct = total = 0
             for offset in range(0, len(rows), 4):
+                previous = saved.get((name, offset))
+                if previous:
+                    for row in previous:
+                        append_json(self.run / f"eval-step-{step:04d}.jsonl", row)
+                        correct += int(row['correct'])
+                        total += 1
+                    continue
                 batch = rows[offset:offset + 4]
                 prompts = []
                 for row in batch:

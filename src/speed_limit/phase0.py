@@ -224,6 +224,7 @@ def main():
     for name,default in [('shard',0),('shards',2),('seed',0),('cap',4096),('batch-size',128),('steps',100),('limit',0),('measure-every',10),('checkpoint-step',0)]: parser.add_argument('--'+name,type=int,default=default)
     parser.add_argument('--dev',action='store_true')
     parser.add_argument('--checkpoint',type=Path); parser.add_argument('--canary',action='store_true')
+    parser.add_argument('--resume-eval',type=Path)
     args=parser.parse_args(); runner=Phase0(args)
     if args.task=='cache': runner.build_cache()
     elif args.task=='evaluate': runner.run_evaluation()

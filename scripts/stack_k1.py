@@ -79,6 +79,17 @@ def worker(args):
                         '--output', str(output), '--cache', str(args.training_run / 'teacher-cache'),
                         '--set-index', str(set_index), '--lr', str(lr), '--steps', '300',
                         '--revision', args.revision]
+                if args.previous_run:
+                    previous = args.previous_run / f'S{set_index}' / f'lr-{lr:g}'
+                    completion = previous / 'complete.json'
+                    if completion.exists() and (previous / 'dev-request.json').exists():
+                        state['jobs'].append({'name': job, 'complete': True,
+                                              'completion_path': str(completion)})
+                        save(state_path, state)
+                        continue
+                    checkpoints = sorted(previous.glob('checkpoint-*/ready.json'))
+                    if checkpoints:
+                        argv.extend(['--resume', str(checkpoints[-1].parent)])
                 invoke(args, env, state, state_path, job, argv, output / 'complete.json')
             state.update(phase='complete', finished_at=time.time())
             save(state_path, state)
@@ -92,8 +103,18 @@ def worker(args):
         invoke(args, env, state, state_path, 'dev-phase0-step100', baseline_args,
                baseline_output / 'complete.json')
         handled = set()
+        def pending_requests():
+            requests = {}
+            if args.previous_run:
+                for role in args.training_roles:
+                    for path in args.previous_run.glob(f'S{role - 1}/lr-*/dev-request.json'):
+                        requests[(path.parent.parent.name, path.parent.name)] = path
+            for path in args.run.glob('S*/lr-*/dev-request.json'):
+                requests[(path.parent.parent.name, path.parent.name)] = path
+            return sorted(requests.values())
+
         while True:
-            requests = sorted(args.run.glob('S*/lr-*/dev-request.json'))
+            requests = pending_requests()
             for path in requests:
                 if str(path) in handled:
                     continue
@@ -107,10 +128,10 @@ def worker(args):
                     str(request['step']), '--dev']
                 invoke(args, env, state, state_path, name, argv, output / 'complete.json')
                 handled.add(str(path))
-            training_states = [args.run / f'role-{role}.json' for role in (1, 2, 3)]
+            training_states = [args.run / f'role-{role}.json' for role in args.training_roles]
             all_finished = all(path.exists() and json.loads(path.read_text()).get('phase')
                                in ('complete', 'failed') for path in training_states)
-            if all_finished and len(handled) == len(list(args.run.glob('S*/lr-*/dev-request.json'))):
+            if all_finished and all(str(path) in handled for path in pending_requests()):
                 break
             state.update(phase='waiting_for_training_checkpoints', heartbeat_at=time.time())
             save(state_path, state)
@@ -130,6 +151,9 @@ def main():
     parser.add_argument('--role', type=int, choices=(0, 1, 2, 3), required=True)
     parser.add_argument('--gpu', required=True)
     parser.add_argument('--revision', required=True)
+    parser.add_argument('--previous-run', type=Path)
+    parser.add_argument('--training-roles', type=int, choices=(1, 2, 3),
+                        nargs='+', default=(1, 2, 3))
     parser.add_argument('--detach', action='store_true')
     args = parser.parse_args()
     args.run.mkdir(parents=True, exist_ok=True)
