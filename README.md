@@ -104,3 +104,28 @@ receipts in the fresh attempt directory. Add `--dev` for AIME24/25 avg@8.
 When moving a job previously scheduled by `watch-and-launch-step100.sh`, use
 `--retire-watch-run RUN --retirement-receipt FRESH_JSON` on that watcher's host.
 The retirement checks the PID's command line before stopping the owned watcher.
+
+## Concurrent exploratory K1 training
+
+`speed_limit.fixed` repeats updates only on one of the three cached 64-rollout
+sets from `splits.json`. The initial student, AdamW settings and sampled-token
+sequence-sum loss match Setup. It measures token-weighted top64 KL on S at
+step zero and every update, held-out KL every 10 steps, and 128 fresh held-out
+rollouts every 50 steps and at termination. Fresh rollouts are diagnostics.
+The run ends at 300 updates or the first measured A below .1.
+
+`scripts/stack_k1.py` runs one set on each of roles 1/2/3, sweeping LR
+1e-6, 3e-6, 1e-5, 3e-5 and 1e-4. Each run starts from the initial student.
+Role 0 waits for the relocated Phase0 step100 evaluation, evaluates its dev
+set, then serves the dev evaluation requests from completed K1 runs serially.
+The user authorized this overlap while the Phase0 final benchmark gate is
+pending. Run receipts retain that pending status. K1 interpretation follows
+verification of the Phase0 model, objective and evaluation protocol.
+
+Fixed-set checkpoints at steps 50, 100, 200 and 300, or early termination,
+include model, optimizer and Python/NumPy/Torch/CUDA RNG state. Resume into a
+fresh output directory with `python -m speed_limit.fixed ... --resume CHECKPOINT`.
+The runner compares the saved set IDs, LR, optimizer and cache manifests,
+restores optimizer/RNG state, and links the earlier absorption history.
+The optimizer option also supports SGD with momentum .9 for the subsequent
+best-two-LR comparison after the AdamW sweep is analyzed.
