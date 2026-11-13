@@ -35,7 +35,9 @@ def invoke(args, env, state, state_path, name, argv, completion):
                                    '--format=csv,noheader'], text=True)
     if any(line.split(',')[0].strip() == args.gpu for line in raw.splitlines()):
         raise RuntimeError('Reserved GPU has a compute process before next job')
-    log = args.run / f'{name}.log'
+    output_root = args.run / 'dev' if args.role == 0 else args.run
+    output_root.mkdir(parents=True, exist_ok=True)
+    log = output_root / f'{name}.log'
     state.update(phase='running', current_job=name, log=str(log), argv=argv)
     with log.open('xb') as stream:
         child = subprocess.Popen(argv, env=env, cwd=args.source,
@@ -46,7 +48,8 @@ def invoke(args, env, state, state_path, name, argv, completion):
             save(state_path, state)
             time.sleep(10)
     result = {'name': name, 'exit_code': child.returncode, 'time': time.time(),
-              'complete': child.returncode == 0 and completion.exists()}
+              'complete': child.returncode == 0 and completion.exists(),
+              'completion_path': str(completion)}
     state['child_pid'] = None
     state.setdefault('jobs', []).append(result)
     save(state_path, state)
@@ -81,7 +84,7 @@ def worker(args):
             save(state_path, state)
             return
         wait_for_step100(args.step100_attempt / 'state.json', state, state_path)
-        baseline_output = args.run / 'dev-phase0-step100'
+        baseline_output = args.run / 'dev' / 'phase0-step100'
         baseline_args = [python, '-m', 'speed_limit.phase0', '--task', 'evaluate',
             '--inputs', str(args.inputs), '--output', str(baseline_output),
             '--cache', str(args.training_run / 'teacher-cache'), '--checkpoint',
@@ -96,15 +99,13 @@ def worker(args):
                     continue
                 request = json.loads(path.read_text())
                 name = f'dev-{path.parent.parent.name}-{path.parent.name}'
-                output = args.run / name
+                output = args.run / 'dev' / name
                 argv = [python, '-m', 'speed_limit.phase0', '--task', 'evaluate',
                     '--inputs', str(args.inputs), '--output', str(output),
                     '--cache', str(args.training_run / 'teacher-cache'),
                     '--checkpoint', request['checkpoint'], '--checkpoint-step',
                     str(request['step']), '--dev']
-                success = invoke(args, env, state, state_path, name, argv, output / 'complete.json')
-                save(path.parent / 'dev-status.json', {'complete': success,
-                     'output': str(output), 'time': time.time()})
+                invoke(args, env, state, state_path, name, argv, output / 'complete.json')
                 handled.add(str(path))
             training_states = [args.run / f'role-{role}.json' for role in (1, 2, 3)]
             all_finished = all(path.exists() and json.loads(path.read_text()).get('phase')

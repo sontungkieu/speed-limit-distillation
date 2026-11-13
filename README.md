@@ -129,3 +129,6 @@ The runner compares the saved set IDs, LR, optimizer and cache manifests,
 restores optimizer/RNG state, and links the earlier absorption history.
 The optimizer option also supports SGD with momentum .9 for the subsequent
 best-two-LR comparison after the AdamW sweep is analyzed.
+
+K1 dev outputs and logs live under the campaign `dev/` directory. The GPU-0
+queue state records completion paths for every attempted dev evaluation.
