@@ -47,65 +47,56 @@ def result(job):
     return json.loads(path.read_text()) if path.exists() else None
 
 
-def expand(args):
-    # mkdir claims serialize expansions without sharing mutable queue state.
-    for job in sorted((args.run / 'jobs').iterdir()):
+def claim(args):
+    own = args.run / f'worker-{args.worker}' / 'jobs'
+    own.mkdir(parents=True, exist_ok=True)
+    initial = sorted((args.run / 'jobs').iterdir())[args.worker]
+    spec = json.loads((initial / 'spec.json').read_text())
+    add_job(own.parent, spec.pop('name'), **spec)
+    for job in sorted(own.iterdir()):
         done = result(job)
-        if not done or not done['complete']:
-            continue
         spec = json.loads((job / 'spec.json').read_text())
-        if spec['kind'] == 'train':
+        if done and done['complete'] and spec['kind'] == 'train':
             completion = json.loads((job / 'output/complete.json').read_text())
-            add_job(args.run, 'dev-' + spec['name'], 'dev',
-                    checkpoint=completion['checkpoint'], step=completion['steps'],
-                    parent=spec['name'])
-    selection = args.run / 'selection.json'
-    if selection.exists():
-        return
+            add_job(own.parent, 'dev-' + spec['name'], 'dev',
+                    checkpoint=completion['checkpoint'], step=completion['steps'])
+    # Every worker writes only its private subtree. Shared artifacts are read-only.
     scores = []
     for lr in RATES:
         values = []
         for index in range(3):
-            name = f'k1-S{index}-{lr:g}'
-            job = args.run / 'jobs' / ('dev-' + name)
-            done = result(job)
-            if not done or not done['complete']:
-                return
-            spec = json.loads((job / 'spec.json').read_text())
-            values.append(json.loads((job / 'output' / f"eval-step-{spec['step']:04d}.json").read_text())['mean_accuracy'])
+            paths = list(args.run.glob(f'worker-*/jobs/dev-k1-S{index}-{lr:g}'))
+            if not paths or not result(paths[0]) or not result(paths[0])['complete']:
+                break
+            job = paths[0]
+            dev = json.loads((job / 'spec.json').read_text())
+            values.append(json.loads((job / 'output' /
+                          f"eval-step-{dev['step']:04d}.json").read_text())['mean_accuracy'])
+        if len(values) != 3:
+            break
         scores.append((sum(values) / 3, lr))
-    # Dev accuracy is the decision metric. Final benchmarks never select LR.
-    best = sorted(scores, key=lambda row: (-row[0], row[1]))[:2]
-    try:
-        (args.run / 'selection-claim').mkdir()
-    except FileExistsError:
-        return
-    for _, lr in best:
-        for index in range(3):
-            add_job(args.run, f'sgd-S{index}-{lr:g}', 'train', set_index=index,
+    if len(scores) == 5:
+        best = sorted(scores, key=lambda row: (-row[0], row[1]))[:2]
+        selection = args.run / f'worker-{args.worker}' / 'selection.json'
+        save(selection, dict(metric='mean dev accuracy across three sets', scores=scores,
+             best_two=best, interpretation='provisional; inspect heldout KL and fresh length'))
+        if args.worker < 6:
+            index = args.worker % 3
+            lr = best[args.worker // 3][1]
+            add_job(own.parent, f'sgd-S{index}-{lr:g}', 'train', set_index=index,
                     lr=lr, optimizer='sgd', objective='sampled')
-    for index in (1, 2):
-        add_job(args.run, f'k2pilot-S{index}-{best[0][1]:g}', 'train', set_index=index,
-                lr=best[0][1], optimizer='adamw', objective='top64')
-    save(selection, dict(metric='mean AIME24/25 avg@8 across three S sets',
-                         scores=scores, best_two=best,
-                         interpretation='provisional dev ranking; inspect heldout and fresh length before declaring lr_star'))
-
-
-def claim(args):
-    expand(args)
-    jobs = sorted((args.run / 'jobs').iterdir(),
-                  key=lambda p: (0 if p.name.startswith('dev-') else 1, p.name))
-    for job in jobs:
-        if not (job / 'spec.json').exists() or (job / 'claim.json').exists():
+        elif args.worker in (6, 7):
+            index = args.worker - 5
+            lr = best[0][1]
+            add_job(own.parent, f'k2pilot-S{index}-{lr:g}', 'train', set_index=index,
+                    lr=lr, optimizer='adamw', objective='top64')
+    for job in sorted(own.iterdir()):
+        if result(job) or (job / 'claim.json').exists():
             continue
-        try:
-            with (job / 'claim.json').open('x') as stream:
-                json.dump(dict(host=os.uname().nodename, worker=args.worker,
-                               gpu=args.gpu, time=time.time()), stream)
-            return job
-        except FileExistsError:
-            pass
+        with (job / 'claim.json').open('x') as stream:
+            json.dump(dict(host=os.uname().nodename, worker=args.worker,
+                           gpu=args.gpu, time=time.time()), stream)
+        return job
     return None
 
 
@@ -151,8 +142,13 @@ def worker(args):
     sys.path.insert(0, str(args.source / 'src'))
     from speed_limit.queue import environment
     args.role = args.worker
+    shared_run = args.run
+    args.run = shared_run / f'worker-{args.worker}'
+    args.run.mkdir(parents=True, exist_ok=True)
     env = environment(args)
-    state_path = args.run / f'worker-{args.worker}.json'
+    args.run = shared_run
+    state_path = args.run / f'worker-{args.worker}' / 'state.json'
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     state = dict(pid=os.getpid(), host=os.uname().nodename, gpu=args.gpu,
                  deadline=args.deadline, revision=args.revision)
     interrupted = False
