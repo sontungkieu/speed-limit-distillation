@@ -139,3 +139,19 @@ To relocate a sweep, start a fresh campaign with `--previous-run PRIOR_CAMPAIGN`
 The training controller reuses completed runs and resumes incomplete runs from
 their latest ready checkpoint. Pass `--training-roles` to the evaluation controller
 when the destination campaign contains only a subset of the original roles.
+
+## Bounded multi-node campaign
+
+`scripts/campaign.py` prepares 15 K1 AdamW runs and five exploratory S0 top64
+LR runs, then workers claim independent jobs with exclusive filesystem claims.
+Each completed training run queues AIME24/25 dev evaluation. After all 15 K1
+dev results, mean dev accuracy across S0/S1/S2 selects two LRs for six SGD runs.
+Ties prefer the smaller LR. The top dev LR also schedules top64 on S1/S2.
+This ranking is provisional until held-out KL and fresh-rollout length are
+reviewed. The vOPD control-variate arm and real-model K3 spectra remain pending.
+Workers accept one physical GPU UUID and an absolute UTC deadline. Each payload
+runs in its own session under GNU timeout with TERM and a five-second KILL grace,
+so payloads remain bounded if the controller disappears. Controllers stop
+launching ten seconds before the deadline. Resume uses prior ready checkpoints
+with the saved model, optimizer and RNG state. Source and output paths use the
+relocated `/workspace/storage-shared/nlp/users/tungks` root.

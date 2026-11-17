@@ -22,7 +22,7 @@ def main():
     for key in ('source','run','inputs'): p.add_argument('--'+key,type=Path,required=True)
     p.add_argument('--stage-only',action='store_true')
     p.add_argument('--role',type=int,required=True); a=p.parse_args()
-    write_root=Path('/workspace/storage-shared/nlp/tungks').resolve()
+    write_root=Path('/workspace/storage-shared/nlp/users/tungks').resolve()
     for path in (a.source,a.run):
         if not path.resolve().is_relative_to(write_root) or path.resolve()==write_root: raise ValueError('Output escapes assigned project root')
     receipt=a.source/'release-receipt.json'
