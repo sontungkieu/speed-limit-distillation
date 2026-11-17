@@ -143,7 +143,10 @@ when the destination campaign contains only a subset of the original roles.
 ## Bounded multi-node campaign
 
 `scripts/campaign.py` prepares 15 K1 AdamW runs and five exploratory S0 top64
-LR runs, then workers claim independent jobs with exclusive filesystem claims.
+LR runs. Each GPU worker owns an isolated output tree and claims its assigned
+jobs exclusively. Recovery workers can select a prior configuration by index,
+then run deferred pilot configurations. `--pilot-set` extends a top64 pilot
+to another fixed state set while preserving its LR and objective.
 Each completed training run queues AIME24/25 dev evaluation. After all 15 K1
 dev results, mean dev accuracy across S0/S1/S2 selects two LRs for six SGD runs.
 Ties prefer the smaller LR. The top dev LR also schedules top64 on S1/S2.

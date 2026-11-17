@@ -54,6 +54,11 @@ def claim(args):
     for index in [initial_index, *args.followup_index]:
         initial = sorted((args.run / 'jobs').iterdir())[index]
         spec = json.loads((initial / 'spec.json').read_text())
+        if args.pilot_set is not None:
+            if spec['objective'] != 'top64':
+                raise ValueError('Pilot set override requires a top64 experiment')
+            spec['name'] = spec['name'].replace(f"S{spec['set_index']}-", f'S{args.pilot_set}-')
+            spec['set_index'] = args.pilot_set
         add_job(own.parent, spec.pop('name'), **spec)
     for job in sorted(own.iterdir()):
         done = result(job)
@@ -203,6 +208,7 @@ def main():
     parser.add_argument('--worker', type=int)
     parser.add_argument('--initial-index', type=int, choices=range(20))
     parser.add_argument('--followup-index', type=int, choices=range(20), nargs='*', default=[])
+    parser.add_argument('--pilot-set', type=int, choices=(0, 1, 2))
     parser.add_argument('--gpu')
     parser.add_argument('--prepare', action='store_true')
     parser.add_argument('--detach', action='store_true')
