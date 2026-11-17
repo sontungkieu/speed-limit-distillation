@@ -50,9 +50,11 @@ def result(job):
 def claim(args):
     own = args.run / f'worker-{args.worker}' / 'jobs'
     own.mkdir(parents=True, exist_ok=True)
-    initial = sorted((args.run / 'jobs').iterdir())[args.worker]
-    spec = json.loads((initial / 'spec.json').read_text())
-    add_job(own.parent, spec.pop('name'), **spec)
+    initial_index = args.worker if args.initial_index is None else args.initial_index
+    for index in [initial_index, *args.followup_index]:
+        initial = sorted((args.run / 'jobs').iterdir())[index]
+        spec = json.loads((initial / 'spec.json').read_text())
+        add_job(own.parent, spec.pop('name'), **spec)
     for job in sorted(own.iterdir()):
         done = result(job)
         spec = json.loads((job / 'spec.json').read_text())
@@ -80,13 +82,13 @@ def claim(args):
         selection = args.run / f'worker-{args.worker}' / 'selection.json'
         save(selection, dict(metric='mean dev accuracy across three sets', scores=scores,
              best_two=best, interpretation='provisional; inspect heldout KL and fresh length'))
-        if args.worker < 6:
-            index = args.worker % 3
-            lr = best[args.worker // 3][1]
+        if initial_index < 6:
+            index = initial_index % 3
+            lr = best[initial_index // 3][1]
             add_job(own.parent, f'sgd-S{index}-{lr:g}', 'train', set_index=index,
                     lr=lr, optimizer='sgd', objective='sampled')
-        elif args.worker in (6, 7):
-            index = args.worker - 5
+        elif initial_index in (6, 7):
+            index = initial_index - 5
             lr = best[0][1]
             add_job(own.parent, f'k2pilot-S{index}-{lr:g}', 'train', set_index=index,
                     lr=lr, optimizer='adamw', objective='top64')
@@ -199,6 +201,8 @@ def main():
     parser.add_argument('--revision', required=True)
     parser.add_argument('--deadline', type=float, required=True)
     parser.add_argument('--worker', type=int)
+    parser.add_argument('--initial-index', type=int, choices=range(20))
+    parser.add_argument('--followup-index', type=int, choices=range(20), nargs='*', default=[])
     parser.add_argument('--gpu')
     parser.add_argument('--prepare', action='store_true')
     parser.add_argument('--detach', action='store_true')
