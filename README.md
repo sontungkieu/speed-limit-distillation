@@ -158,3 +158,9 @@ so payloads remain bounded if the controller disappears. Controllers stop
 launching ten seconds before the deadline. Resume uses prior ready checkpoints
 with the saved model, optimizer and RNG state. Source and output paths use the
 relocated `/workspace/storage-shared/nlp/users/tungks` root.
+
+`scripts/finish_sgd.py` completes the two unfinished controls from the 20-GPU
+campaign. Use a fresh output directory and a verified host and GPU UUID per
+role. Role 0 resumes S1 at LR 1e-6 and evaluates its final checkpoint. Role 1
+evaluates the completed S0 checkpoint at the same LR, reusing complete dev
+batches if present. Each role records its launch, current stage and results.
