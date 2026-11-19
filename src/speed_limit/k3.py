@@ -1,6 +1,7 @@
 """K3 step-zero spectrum and matched S0 LoRA curve using cached teacher support."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -120,17 +121,31 @@ def spectrum(args, student, records):
             'preconditioning': 'none at step zero', 'parameter_step': 0}
 
 
+def curve_agreement(curve, reference):
+    differences = [observed - target for observed, target in zip(curve, reference, strict=True)]
+    if len(differences) != 101 or not all(math.isfinite(value) for value in differences):
+        raise ValueError('Expected finite curves on steps 0–100')
+    return {
+        'calibration_rmse_1_50': math.sqrt(sum(value**2 for value in differences[1:51]) / 50),
+        'validation_rmse_51_100': math.sqrt(sum(value**2 for value in differences[51:101]) / 50),
+        'difference_at_100': differences[100],
+    }
+
+
 def fit_lora(args, student, records, contract):
     reference_contract = json.loads((args.reference / 'fixed-contract.json').read_text())
-    for field in ('row_ids', 'cache_manifests', 'set_index', 'lr'):
+    for field in ('row_ids', 'cache_manifests', 'set_index'):
         if reference_contract[field] != contract[field]:
             raise ValueError(f'Reference uses a different {field}')
+    reference_lr = args.reference_lr if args.reference_lr is not None else args.lr
+    if reference_contract['lr'] != reference_lr:
+        raise ValueError('Reference learning rate differs from the declared rate')
     if (reference_contract['objective'] != 'top64_renormalized_reverse_kl_sequence_sum'
             or reference_contract['optimizer'] != 'adamw'):
         raise ValueError('Reference objective or optimizer differs')
     reference = {row['step']: row['A'] for row in read_curve(args.reference / 'absorption.jsonl', 100)}
-    if not {0, 50, 100}.issubset(reference):
-        raise ValueError('Full fine-tuning reference lacks a comparison point')
+    if set(reference) != set(range(101)):
+        raise ValueError('Full fine-tuning reference must cover steps 0–100')
     student.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     params = {name: value for name, value in student.named_parameters() if value.requires_grad}
     optimizer = torch.optim.AdamW(params.values(), lr=args.lr, betas=(.9, .999),
@@ -173,9 +188,12 @@ def fit_lora(args, student, records, contract):
             torch.save({name: value.detach().cpu() for name, value in params.items()}, folder / 'adapter.pt')
             torch.save(capture_training_state(optimizer, step), folder / 'training_state.pt')
             write_json(folder / 'ready.json', {'step': step, 'revision': args.revision})
-    return {'full_finetuning_reference': str(args.reference),
+    target_curve = [reference[step] for step in range(len(curve))]
+    return {'full_finetuning_reference': str(args.reference), 'reference_lr': reference_lr,
+            'lora_lr': args.lr, **curve_agreement(curve, target_curve),
             'comparison': [{'step': step, 'lora_A': curve[step], 'full_finetuning_A': reference[step]}
-                           for step in (0, 50, 100)], 'lora_times': absorption_times(curve)}
+                           for step in (0, 50, 100)], 'lora_times': absorption_times(curve),
+            'reference_times': absorption_times(target_curve)}
 
 
 def main():
@@ -183,6 +201,7 @@ def main():
     for name in ('inputs', 'cache', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--reference', type=Path)
+    parser.add_argument('--reference-lr', type=float)
     parser.add_argument('--task', choices=('spectrum', 'lora'), required=True)
     parser.add_argument('--set-index', type=int, choices=range(3), required=True)
     parser.add_argument('--lr', type=float, default=1e-6)
@@ -190,6 +209,9 @@ def main():
     args = parser.parse_args()
     if args.task == 'lora' and args.reference is None:
         parser.error('LoRA comparison requires the full fine-tuning result path')
+    if any(rate is not None and (not math.isfinite(rate) or rate <= 0)
+           for rate in (args.lr, args.reference_lr)):
+        parser.error('Learning rates must be finite and positive')
     uuid = str(torch.cuda.get_device_properties(0).uuid).lower().removeprefix('gpu-')
     if uuid != os.environ.get('SPEED_LIMIT_GPU_UUID', '').lower().removeprefix('gpu-'):
         raise RuntimeError('CUDA GPU UUID differs from requested device')
@@ -206,7 +228,8 @@ def main():
         attn_implementation='eager' if args.task == 'spectrum' else 'sdpa').to('cuda')
     layers = enable_lora(student)
     contract = {**metadata, 'revision': args.revision, 'set_index': args.set_index, 'task': args.task,
-                'lr': args.lr, 'objective': 'teacher_top64_reverse_kl', 'model_path': str(model_path),
+                'lr': args.lr, 'reference_lr': args.reference_lr,
+                'objective': 'teacher_top64_reverse_kl', 'model_path': str(model_path),
                 'seed': 0, 'adapter_rank': 16, 'adapter_alpha': 32, 'adapter_layers': layers,
                 'rollouts': len(records), 'tokens': sum(len(record['response']) for record in records),
                 'precision': 'FP32' if args.task == 'spectrum' else 'FP32 weights and BF16 forward'}

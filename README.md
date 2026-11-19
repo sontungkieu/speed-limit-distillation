@@ -190,3 +190,11 @@ curve with the campaign's existing full-training top-64 curve. Adapter and
 optimizer state are saved at steps 50 and 100. All roles reuse the campaign
 cache. This diagnostic leaves checkpoint spectra and prediction validation
 for subsequent runs.
+
+Pass `--lora-lr` to `scripts/run_k3.py` to run an independent S0 LoRA
+candidate at a different learning rate. The full fine-tuning reference stays
+fixed at LR 1e-6 and must match the cache, state set, objective, and optimizer.
+Rank candidates by absorption-curve RMSE on steps 1–50. Report agreement on
+steps 51–100 separately, with absorption times and the step-100 gap. Use a
+separate output directory for each candidate and retain the same rank, scale,
+seed, and training recipe across candidates.

@@ -3,10 +3,21 @@ import unittest
 import torch
 from torch import nn
 
+from speed_limit.k3 import curve_agreement
 from speed_limit.spectral import LoRALinear, StreamedGram, residual_prediction
 
 
 class SpectralTests(unittest.TestCase):
+    def test_curve_agreement_keeps_later_steps_out_of_calibration(self):
+        reference = [1.] * 101
+        calibration_fit = [1.] * 51 + [.5] * 50
+        agreement = curve_agreement(calibration_fit, reference)
+        self.assertEqual(agreement['calibration_rmse_1_50'], 0.)
+        self.assertEqual(agreement['validation_rmse_51_100'], .5)
+        self.assertEqual(agreement['difference_at_100'], -.5)
+        with self.assertRaises(ValueError):
+            curve_agreement(calibration_fit[:-1], reference[:-1])
+
     def test_streamed_gram_matches_explicit_token_gradients(self):
         class StateLoss(nn.Module):
             def __init__(self):
