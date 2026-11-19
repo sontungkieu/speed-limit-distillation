@@ -151,7 +151,8 @@ Each completed training run queues AIME24/25 dev evaluation. After all 15 K1
 dev results, mean dev accuracy across S0/S1/S2 selects two LRs for six SGD runs.
 Ties prefer the smaller LR. The top dev LR also schedules top64 on S1/S2.
 This ranking is provisional until held-out KL and fresh-rollout length are
-reviewed. The vOPD control-variate arm and real-model K3 spectra remain pending.
+reviewed. The vOPD control-variate arm and K3 diagnostics use that provisional
+rate for matched comparisons.
 Workers accept one physical GPU UUID and an absolute UTC deadline. Each payload
 runs in its own session under GNU timeout with TERM and a five-second KILL grace,
 so payloads remain bounded if the controller disappears. Controllers stop
@@ -175,3 +176,17 @@ Like the other K2 arms, these updates reuse fixed sampled tokens. The on-policy
 unbiasedness argument from arXiv:2605.07865 does not carry over to this replay
 regime. The sampled-token reward uses cached teacher log probabilities, while
 the baseline uses a frozen teacher forward pass on the same states.
+
+`scripts/run_k3.py` runs a first real-model K3 diagnostic. Roles 0–2 each use
+one B200 to measure the step-zero FP32 LoRA spectrum on one fixed state set.
+Each role checks sparse candidate logits against the full output head and
+checks Gram symmetry before starting Lanczos. The operator streams one
+rollout at a time and uses per-token top-64 KL gradients with the same
+rollout-count scaling as training. The predicted curve uses sqrt(2 KL) as
+a scalar residual proxy and holds unresolved mass fixed. At step zero no
+measured Adam second moments exist, so these spectra are unpreconditioned.
+Role 3 fits rank-16 LoRA on S0 for 100 updates at LR 1e-6 and compares its
+curve with the campaign's existing full-training top-64 curve. Adapter and
+optimizer state are saved at steps 50 and 100. All roles reuse the campaign
+cache. This diagnostic leaves checkpoint spectra and prediction validation
+for subsequent runs.
