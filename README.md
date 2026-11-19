@@ -164,3 +164,14 @@ campaign. Use a fresh output directory and a verified host and GPU UUID per
 role. Role 0 resumes S1 at LR 1e-6 and evaluates its final checkpoint. Role 1
 evaluates the completed S0 checkpoint at the same LR, reusing complete dev
 batches if present. Each role records its launch, current stage and results.
+
+`scripts/run_control_variate.py` runs K2 at LR 1e-6, the best K1 dev rate and
+a rate with existing sampled-token and top-64 comparisons on all three sets.
+Roles 0–2 use the exact full-vocabulary vOPD KL baseline on S0–S2. Role 3 uses
+the vOPD student top-20 baseline on S0 to compare the approximation against
+the exact baseline. The comparison uses the same 64 cached rollouts per set,
+AdamW, 300-step ceiling, stopping criterion, diagnostics and dev evaluation.
+Like the other K2 arms, these updates reuse fixed sampled tokens. The on-policy
+unbiasedness argument from arXiv:2605.07865 does not carry over to this replay
+regime. The sampled-token reward uses cached teacher log probabilities, while
+the baseline uses a frozen teacher forward pass on the same states.

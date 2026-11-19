@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from .legacy import append_json, write_json
+from .control_variate import rollout_loss
 from .metrics import absorption_times
 from .phase0 import Phase0, load_cache, load_rows, sha256
 
@@ -53,21 +54,31 @@ class FixedSet(Phase0):
         self.student.train()
         self.optimizer.zero_grad(set_to_none=True)
         loss_sum = 0.
+        baseline_sum = 0.
         for record in records:
-            _, candidates = distribution(self.student, record, gradients=True)
-            loss = top64_kl(candidates, record['top64_logprobs']).sum() / len(records)
+            if self.args.objective == 'top64':
+                _, candidates = distribution(self.student, record, gradients=True)
+                loss = top64_kl(candidates, record['top64_logprobs']).sum()
+            else:
+                top_k = 20 if self.args.objective == 'control-top20' else None
+                loss, baseline = rollout_loss(self.student, self.teacher, record, top_k)
+                baseline_sum += float(baseline)
+            loss = loss / len(records)
             if not torch.isfinite(loss):
-                raise RuntimeError('Nonfinite top64 objective')
+                raise RuntimeError('Nonfinite fixed-set objective')
             loss.backward()
             loss_sum += float(loss.detach())
         norm = torch.nn.utils.clip_grad_norm_(self.student.parameters(), 1.,
                                               error_if_nonfinite=True)
         self.optimizer.step()
         torch.cuda.synchronize()
-        return {'loss': loss_sum, 'gradient_norm': float(norm),
+        metrics = {'loss': loss_sum, 'gradient_norm': float(norm),
                 'update_seconds': time.monotonic() - started,
                 'mean_response_tokens': sum(len(r['response']) for r in records) / len(records),
                 'cap_hit_fraction': sum(r['finish_reason'] == 'length' for r in records) / len(records)}
+        if self.args.objective.startswith('control-'):
+            metrics['mean_baseline_kl'] = baseline_sum / sum(len(r['response']) for r in records)
+        return metrics
 
     def checkpoint(self, step):
         target = self.run / f'checkpoint-{step:04d}'
@@ -96,8 +107,10 @@ class FixedSet(Phase0):
             'seed': args.seed, 'weight_decay': .01, 'clip': 1.,
             'scope': 'exploratory K1 concurrent with pending Phase0 final evaluation',
         }
-        if args.objective != 'sampled':
+        if args.objective == 'top64':
             contract['objective'] = 'top64_renormalized_reverse_kl_sequence_sum'
+        elif args.objective.startswith('control-'):
+            contract['objective'] = f'sampled_token_reverse_kl_{args.objective}_detached_sequence_sum'
         write_json(self.run / 'fixed-contract.json', contract)
         if args.optimizer == 'sgd':
             self.optimizer = torch.optim.SGD(self.student.parameters(), lr=args.lr,
@@ -174,6 +187,7 @@ class FixedSet(Phase0):
         summary = absorption_times([row['A'] for row in history], [row['step'] for row in history])
         summary.update(set_index=args.set_index, lr=args.lr, optimizer=args.optimizer,
                        steps=final_step, source_revision=args.revision, checkpoint=str(checkpoint),
+                       objective=args.objective,
                        dev_evaluation_complete=False, elapsed_seconds=time.time() - self.started)
         write_json(self.run / 'complete.json', summary)
         write_json(self.run / 'dev-request.json', {'checkpoint': str(checkpoint),
@@ -201,7 +215,8 @@ def main():
     parser.add_argument('--optimizer', choices=('adamw', 'sgd'), default='adamw')
     parser.add_argument('--steps', type=int, default=300)
     parser.add_argument('--resume', type=Path)
-    parser.add_argument('--objective', choices=('sampled', 'top64'), default='sampled')
+    parser.add_argument('--objective', choices=('sampled', 'top64', 'control-full', 'control-top20'),
+                        default='sampled')
     parser.add_argument('--revision', required=True)
     args = parser.parse_args()
     if args.lr <= 0 or not 0 < args.steps <= 300:
