@@ -198,3 +198,12 @@ Rank candidates by absorption-curve RMSE on steps 1–50. Report agreement on
 steps 51–100 separately, with absorption times and the step-100 gap. Use a
 separate output directory for each candidate and retain the same rank, scale,
 seed, and training recipe across candidates.
+
+For checkpoint spectra, use `run_k3.py --schedule` with a JSON mapping GPU role
+numbers to ordered lists of `lora` and `spectrum` stages. Every stage specifies
+`task`, `set_index`, and `lr`. A `lora` stage also specifies `reference`. A
+`spectrum` stage specifies `checkpoint`, `step`, and `preconditioner` (`none`
+or `adam`). The GPU worker waits for the exact ready marker, checks checkpoint
+lineage and parameter order, then measures the spectrum in FP32. Adam uses
+the bias-corrected second moments saved at that checkpoint. Residual predictions
+are local to the checkpoint and reuse the same KL proxy as at step zero.

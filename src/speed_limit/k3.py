@@ -1,4 +1,4 @@
-"""K3 step-zero spectrum and matched S0 LoRA curve using cached teacher support."""
+"""K3 LoRA curves and checkpoint spectra using cached teacher support."""
 import argparse
 import json
 import math
@@ -10,7 +10,7 @@ import time
 import torch
 
 from .fixed import capture_training_state, read_curve
-from .lanczos import lanczos_top_eigenpairs
+from .lanczos import adam_preconditioner, lanczos_top_eigenpairs
 from .legacy import append_json, write_json
 from .metrics import absorption_times
 from .phase0 import distribution, load_rows, sha256, top64_kl
@@ -55,7 +55,7 @@ def make_batch(record, limit=None):
             record['top64_logprobs'][:limit].to('cuda'))
 
 
-def check_gram(model, student, records):
+def check_gram(model, student, records, preconditioner=None):
     batches = [make_batch(record, 32) for record in records[:2]]
     with torch.no_grad():
         for batch in batches:
@@ -63,7 +63,7 @@ def check_gram(model, student, records):
             logits = student(input_ids=tokens, use_cache=False).logits[0, start:start + len(ids)]
             reference = top64_kl(logits.gather(-1, ids), teacher)
             torch.testing.assert_close(model(batch), reference, atol=5e-5, rtol=1e-4)
-    gram = StreamedGram(model, batches)
+    gram = StreamedGram(model, batches, preconditioner)
     u, v = torch.randn(2, sum(gram.sizes), device='cuda')
     started = time.monotonic()
     ku, kv = gram.matvec(u), gram.matvec(v)
@@ -75,14 +75,67 @@ def check_gram(model, student, records):
             'symmetry_absolute_error': float((left - right).abs())}
 
 
-def spectrum(args, student, records):
+def checkpoint_preconditioner(parameters, optimizer, step, lr):
+    groups = optimizer['param_groups']
+    if len(groups) != 1 or groups[0]['lr'] != lr:
+        raise ValueError('Checkpoint optimizer layout or learning rate differs')
+    group = groups[0]
+    ids = group['params']
+    if len(set(ids)) != len(parameters) or set(ids) != set(optimizer['state']):
+        raise ValueError('Checkpoint optimizer parameter IDs differ')
+    moments = {}
+    for (name, parameter), state_id in zip(parameters.items(), ids, strict=True):
+        state = optimizer['state'][state_id]
+        moment = state['exp_avg_sq']
+        if (float(state['step']) != step or moment.shape != parameter.shape
+                or moment.dtype != torch.float32 or not torch.isfinite(moment).all()
+                or (moment < 0).any()):
+            raise ValueError(f'Invalid Adam second moment for {name}')
+        moments[name] = moment.to(parameter.device)
+    return adam_preconditioner(parameters, moments, step, beta2=group['betas'][1], eps=group['eps'])
+
+
+def load_lora_checkpoint(student, checkpoint, step, contract, mode):
+    ready = json.loads((checkpoint / 'ready.json').read_text())
+    previous = json.loads((checkpoint.parent / 'contract.json').read_text())
+    if ready['step'] != step or ready['revision'] != previous['revision'] or previous['task'] != 'lora':
+        raise ValueError('Checkpoint receipt does not match the requested training step')
+    for field in ('row_ids', 'cache_manifests', 'splits_sha256', 'set_index', 'lr', 'model_path',
+                  'adapter_rank', 'adapter_alpha', 'adapter_layers', 'seed', 'objective'):
+        if previous[field] != contract[field]:
+            raise ValueError(f'Checkpoint training contract differs on {field}')
+    parameters = {name: value for name, value in student.named_parameters() if value.requires_grad}
+    adapter_path = checkpoint / 'adapter.pt'
+    adapter = torch.load(adapter_path, map_location='cpu', weights_only=True)
+    if tuple(adapter) != tuple(parameters):
+        raise ValueError('Checkpoint adapter parameter ordering differs')
+    with torch.no_grad():
+        for name, parameter in parameters.items():
+            value = adapter[name]
+            if value.shape != parameter.shape or value.dtype != torch.float32 or not torch.isfinite(value).all():
+                raise ValueError(f'Invalid adapter parameter {name}')
+            parameter.copy_(value)
+    receipt = {'path': str(checkpoint), 'training_revision': previous['revision'],
+               'adapter_sha256': sha256(adapter_path), 'step': step}
+    if mode == 'none':
+        return receipt, None
+    state_path = checkpoint / 'training_state.pt'
+    state = torch.load(state_path, map_location='cpu', weights_only=True)
+    if state['step'] != step:
+        raise ValueError('Optimizer checkpoint step differs')
+    preconditioner = checkpoint_preconditioner(parameters, state['optimizer'], step, contract['lr'])
+    receipt['optimizer_sha256'] = sha256(state_path)
+    return receipt, {'student.' + name: value for name, value in preconditioner.items()}
+
+
+def spectrum(args, student, records, preconditioner=None):
     student.eval()
     model = CandidateLoss(student)
-    check = check_gram(model, student, records)
+    check = check_gram(model, student, records, preconditioner)
     write_json(args.output / 'canary.json', check)
     print('K3_CANARY', json.dumps(check), flush=True)
     batches = [make_batch(record) for record in records]
-    gram = StreamedGram(model, batches)
+    gram = StreamedGram(model, batches, preconditioner)
     with torch.no_grad():
         losses = torch.cat([model(batch) for batch in batches])
     if not torch.isfinite(losses).all() or losses.min() < -5e-5:
@@ -118,7 +171,9 @@ def spectrum(args, student, records):
             'residual_weights': weights.tolist(), 'unresolved_residual_mass': float(unresolved),
             'predicted_A_unresolved_mass_fixed': curve,
             'predicted_times': absorption_times(curve) if curve is not None else None,
-            'preconditioning': 'none at step zero', 'parameter_step': 0}
+            'prediction_learning_rate': args.lr,
+            'preconditioning': 'adam_second_moment' if preconditioner is not None else 'none',
+            'parameter_step': args.checkpoint_step or 0}
 
 
 def curve_agreement(curve, reference):
@@ -202,6 +257,9 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--reference-lr', type=float)
+    parser.add_argument('--checkpoint', type=Path)
+    parser.add_argument('--checkpoint-step', type=int, choices=(50, 100))
+    parser.add_argument('--preconditioner', choices=('none', 'adam'), default='none')
     parser.add_argument('--task', choices=('spectrum', 'lora'), required=True)
     parser.add_argument('--set-index', type=int, choices=range(3), required=True)
     parser.add_argument('--lr', type=float, default=1e-6)
@@ -209,6 +267,10 @@ def main():
     args = parser.parse_args()
     if args.task == 'lora' and args.reference is None:
         parser.error('LoRA comparison requires the full fine-tuning result path')
+    if bool(args.checkpoint) != bool(args.checkpoint_step) or (args.checkpoint and args.task != 'spectrum'):
+        parser.error('A spectrum checkpoint requires both its path and step')
+    if args.preconditioner == 'adam' and args.checkpoint is None:
+        parser.error('Adam preconditioning requires saved optimizer moments')
     if any(rate is not None and (not math.isfinite(rate) or rate <= 0)
            for rate in (args.lr, args.reference_lr)):
         parser.error('Learning rates must be finite and positive')
@@ -233,9 +295,16 @@ def main():
                 'seed': 0, 'adapter_rank': 16, 'adapter_alpha': 32, 'adapter_layers': layers,
                 'rollouts': len(records), 'tokens': sum(len(record['response']) for record in records),
                 'precision': 'FP32' if args.task == 'spectrum' else 'FP32 weights and BF16 forward'}
+    preconditioner = None
+    if args.checkpoint is not None:
+        checkpoint, preconditioner = load_lora_checkpoint(
+            student, args.checkpoint, args.checkpoint_step, contract, args.preconditioner)
+        contract.update(checkpoint=checkpoint, preconditioner=args.preconditioner)
+        print('K3_CHECKPOINT', json.dumps(checkpoint), flush=True)
     write_json(args.output / 'contract.json', contract)
     start = time.monotonic()
-    results = spectrum(args, student, records) if args.task == 'spectrum' else fit_lora(args, student, records, contract)
+    results = (spectrum(args, student, records, preconditioner) if args.task == 'spectrum'
+               else fit_lora(args, student, records, contract))
     write_json(args.output / 'complete.json', {**results, 'elapsed_seconds': time.monotonic() - start})
     print('K3_COMPLETE', args.task, args.set_index, flush=True)
 

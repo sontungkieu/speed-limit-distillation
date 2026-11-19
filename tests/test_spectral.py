@@ -3,11 +3,23 @@ import unittest
 import torch
 from torch import nn
 
-from speed_limit.k3 import curve_agreement
+from speed_limit.k3 import checkpoint_preconditioner, curve_agreement
 from speed_limit.spectral import LoRALinear, StreamedGram, residual_prediction
 
 
 class SpectralTests(unittest.TestCase):
+    def test_saved_adam_moments_follow_adapter_parameter_order(self):
+        parameters = {'a': torch.zeros(2), 'b': torch.zeros(1)}
+        group = {'params': [7, 3], 'lr': 3e-5, 'betas': (.9, .5), 'eps': 0.}
+        state = {3: {'step': torch.tensor(2.), 'exp_avg_sq': torch.tensor([12.])},
+                 7: {'step': torch.tensor(2.), 'exp_avg_sq': torch.tensor([.75, 3.])}}
+        optimizer = {'param_groups': [group], 'state': state}
+        p = checkpoint_preconditioner(parameters, optimizer, 2, 3e-5)
+        torch.testing.assert_close(p['a'], torch.tensor([1., .5]))
+        torch.testing.assert_close(p['b'], torch.tensor([.25]))
+        with self.assertRaises(ValueError):
+            checkpoint_preconditioner(parameters, optimizer, 1, 3e-5)
+
     def test_curve_agreement_keeps_later_steps_out_of_calibration(self):
         reference = [1.] * 101
         calibration_fit = [1.] * 51 + [.5] * 50
