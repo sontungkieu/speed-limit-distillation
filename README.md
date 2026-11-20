@@ -222,3 +222,6 @@ On nodes with an MPS daemon, pass its verified PID and control pipe with
 `--mps-server` and `--mps-pipe`. Admission requires NVML visibility of all MPS
 clients and a selected GPU with no client. The controller checks this before
 detach and before every stage.
+`--after-role` allows a queued worker to wait for a specific predecessor on
+the same host and physical GPU. The wait counts toward the watchdog deadline,
+and the GPU is checked again when the predecessor releases it.

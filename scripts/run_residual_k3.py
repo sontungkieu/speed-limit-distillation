@@ -36,6 +36,13 @@ def gpu_preflight(args):
     return inventory
 
 
+def predecessor(args):
+    state = json.loads(args.after_role.read_text())
+    if state['hostname'] != args.host or state['gpu'] != args.gpu:
+        raise RuntimeError('Predecessor is not on the same host and physical GPU')
+    return state
+
+
 def run(args):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.source / 'src'))
@@ -45,6 +52,18 @@ def run(args):
         def check_gpu(self):
             self.save(gpu_preflight=gpu_preflight(self.a))
 
+    if args.after_role:
+        original = predecessor(args)
+        print('WAITING_FOR_GPU', args.after_role, flush=True)
+        while True:
+            prior = predecessor(args)
+            if (prior['pid'], prior['started_at']) != (original['pid'], original['started_at']):
+                raise RuntimeError('Predecessor worker identity changed while waiting')
+            if prior['phase'] in ('complete', 'failed') and not prior.get('child_pid'):
+                break
+            save(args.run / 'waiting.json', {'predecessor': str(args.after_role), 'phase': prior['phase'],
+                                            'heartbeat_at': time.time()})
+            time.sleep(10)
     queue = WorkerQueue(args)
     queue.env.update(PYTHONDONTWRITEBYTECODE='1',
                      NRL_CACHE_ROOT=str(args.run / 'compile-cache' / 'runtime'))
@@ -89,6 +108,7 @@ def main():
     parser.add_argument('--seconds', type=int, default=43200)
     parser.add_argument('--mps-server', type=int)
     parser.add_argument('--mps-pipe', type=Path)
+    parser.add_argument('--after-role', type=Path, help='Wait for an earlier worker on this physical GPU')
     parser.add_argument('--detach', action='store_true')
     args = parser.parse_args()
     if socket.gethostname() != args.host:
@@ -103,7 +123,10 @@ def main():
         run(args)
         return
 
-    gpu_preflight(args)
+    if args.after_role:
+        predecessor(args)
+    else:
+        gpu_preflight(args)
     args.run.mkdir(parents=True, exist_ok=False)
     argv = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=5s', str(args.seconds - 5),
             sys.executable, str(Path(__file__).resolve()),
@@ -114,7 +137,8 @@ def main():
                                  stderr=subprocess.STDOUT, start_new_session=True)
     receipt = {'watchdog_pid': child.pid, 'host': args.host, 'gpu': args.gpu, 'role': args.role,
                'revision': args.revision, 'started_at': started,
-               'deadline_epoch': started + args.seconds, 'duration_seconds': args.seconds}
+               'deadline_epoch': started + args.seconds, 'duration_seconds': args.seconds,
+               'after_role': str(args.after_role) if args.after_role else None}
     (args.run / 'launch.json').write_text(json.dumps(receipt, indent=2))
     print(json.dumps(receipt), flush=True)
 

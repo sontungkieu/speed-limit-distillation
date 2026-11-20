@@ -1,12 +1,14 @@
 import runpy
 from pathlib import Path
 import subprocess
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 
-preflight = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'scripts/run_residual_k3.py'))['gpu_preflight']
+launcher = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'scripts/run_residual_k3.py'))
+preflight = launcher['gpu_preflight']
 
 
 class ResidualLauncherTests(unittest.TestCase):
@@ -28,6 +30,16 @@ class ResidualLauncherTests(unittest.TestCase):
                     patch.object(subprocess, 'run', return_value=SimpleNamespace(stdout='222\n333\n', stderr='')):
                 with self.assertRaises(RuntimeError):
                     preflight(self.options)
+
+    def test_wait_only_accepts_a_predecessor_on_the_same_physical_gpu(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = Path(folder) / 'role-0.json'
+            receipt.write_text('{"hostname":"worker", "gpu":"GPU-1"}')
+            args = SimpleNamespace(after_role=receipt, host='worker', gpu='GPU-1')
+            self.assertEqual(launcher['predecessor'](args)['gpu'], 'GPU-1')
+            args.gpu = 'GPU-2'
+            with self.assertRaises(RuntimeError):
+                launcher['predecessor'](args)
 
 
 if __name__ == '__main__':
