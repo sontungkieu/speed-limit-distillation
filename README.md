@@ -218,3 +218,7 @@ They use no future gradient norms. The 40/60-iteration comparison diagnoses
 projection error. Step-50/100 spectra show how the residual-weighted geometry
 changes after SGD. The launcher takes an ordered per-GPU schedule, records its
 deadline, and keeps each worker and its subprocesses under a 12-hour GNU timeout.
+On nodes with an MPS daemon, pass its verified PID and control pipe with
+`--mps-server` and `--mps-pipe`. Admission requires NVML visibility of all MPS
+clients and a selected GPU with no client. The controller checks this before
+detach and before every stage.

@@ -1,6 +1,8 @@
 """Run the ordered K3 residual/SGD stages on one verified GPU for up to 12 hours."""
 import argparse
+import csv
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -9,12 +11,41 @@ import time
 import traceback
 
 
+def gpu_preflight(args):
+    inventory = subprocess.check_output(['nvidia-smi', '--query-gpu=uuid,memory.used',
+                                         '--format=csv,noheader,nounits'], text=True)
+    matches = [row for row in csv.reader(inventory.splitlines(), skipinitialspace=True) if row[0] == args.gpu]
+    if len(matches) != 1 or int(matches[0][1]) > 1024:
+        raise RuntimeError('Selected GPU UUID is absent or has an allocation above 1 GiB')
+    raw_apps = subprocess.check_output(['nvidia-smi', '--query-compute-apps=gpu_uuid,pid,process_name',
+                                        '--format=csv,noheader'], text=True)
+    apps = list(csv.reader(raw_apps.splitlines(), skipinitialspace=True))
+    if args.mps_server is not None:
+        server = str(args.mps_server)
+        process_ids = {pid for _, pid, _ in apps if pid != server}
+        commands = f'get_server_list\nget_client_list {server}\n'
+        mps = subprocess.run(['/usr/bin/nvidia-cuda-mps-control'], input=commands, text=True,
+                             capture_output=True, timeout=5, check=True,
+                             env={**os.environ, 'CUDA_MPS_PIPE_DIRECTORY': str(args.mps_pipe)})
+        reports = mps.stdout.split()
+        if mps.stderr.strip() or not reports or reports[0] != server or not set(reports[1:]) <= process_ids:
+            raise RuntimeError('MPS daemon or all of its clients could not be identified')
+        apps = [row for row in apps if row[1:] != [server, 'nvidia-cuda-mps-server']]
+    if any(uuid == args.gpu for uuid, _, _ in apps):
+        raise RuntimeError('Selected GPU has a compute client')
+    return inventory
+
+
 def run(args):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.source / 'src'))
     from speed_limit.queue import Queue, save
 
-    queue = Queue(args)
+    class WorkerQueue(Queue):
+        def check_gpu(self):
+            self.save(gpu_preflight=gpu_preflight(self.a))
+
+    queue = WorkerQueue(args)
     queue.env.update(PYTHONDONTWRITEBYTECODE='1',
                      NRL_CACHE_ROOT=str(args.run / 'compile-cache' / 'runtime'))
     stages = json.loads(args.schedule.read_text())[str(args.role)]
@@ -56,16 +87,23 @@ def main():
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--role', type=int, choices=range(4), required=True)
     parser.add_argument('--seconds', type=int, default=43200)
+    parser.add_argument('--mps-server', type=int)
+    parser.add_argument('--mps-pipe', type=Path)
     parser.add_argument('--detach', action='store_true')
     args = parser.parse_args()
     if socket.gethostname() != args.host:
         parser.error('Launch host does not match the allocation')
     if args.seconds <= 5 or args.seconds > 43200:
         parser.error('Worker duration must allow the five-second termination grace')
+    if bool(args.mps_server) != bool(args.mps_pipe):
+        parser.error('Supply both the verified MPS server PID and its control pipe')
+    if args.mps_server is not None and args.mps_server <= 0:
+        parser.error('MPS server PID must be positive')
     if not args.detach:
         run(args)
         return
 
+    gpu_preflight(args)
     args.run.mkdir(parents=True, exist_ok=False)
     argv = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=5s', str(args.seconds - 5),
             sys.executable, str(Path(__file__).resolve()),
