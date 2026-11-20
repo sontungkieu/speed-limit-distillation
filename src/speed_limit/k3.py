@@ -98,7 +98,8 @@ def checkpoint_preconditioner(parameters, optimizer, step, lr):
 def load_lora_checkpoint(student, checkpoint, step, contract, mode):
     ready = json.loads((checkpoint / 'ready.json').read_text())
     previous = json.loads((checkpoint.parent / 'contract.json').read_text())
-    if ready['step'] != step or ready['revision'] != previous['revision'] or previous['task'] != 'lora':
+    if (ready['step'] != step or ready['revision'] != previous['revision']
+            or previous['task'] not in ('lora', 'sgd')):
         raise ValueError('Checkpoint receipt does not match the requested training step')
     for field in ('row_ids', 'cache_manifests', 'splits_sha256', 'set_index', 'lr', 'model_path',
                   'adapter_rank', 'adapter_alpha', 'adapter_layers', 'seed', 'objective'):

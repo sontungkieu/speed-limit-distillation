@@ -22,10 +22,15 @@ def adam_preconditioner(parameters,second_moment,step,beta2=.999,eps=1e-8):
     if step<=0: raise ValueError('Adam preconditioner requires measured optimizer moments')
     return {name:1/((second_moment[name].float()/(1-beta2**step)).sqrt()+eps) for name in parameters}
 
-def lanczos_top_eigenpairs(matvec,dimension,iterations=50,dtype=torch.float32,device='cpu',seed=0):
+def lanczos_top_eigenpairs(matvec,dimension,iterations=50,dtype=torch.float32,device='cpu',seed=0,
+                           initial_vector=None, return_projection=False):
     if dimension<=0 or iterations<=0: raise ValueError('positive dimensions required')
     generator=torch.Generator(device=device).manual_seed(seed)
-    q=torch.randn(dimension,dtype=dtype,device=device,generator=generator); q=q/q.norm()
+    q = (torch.randn(dimension,dtype=dtype,device=device,generator=generator) if initial_vector is None
+         else initial_vector.to(device=device, dtype=dtype))
+    if q.shape != (dimension,) or not torch.isfinite(q).all() or q.norm() == 0:
+        raise ValueError('Lanczos start must be a finite nonzero vector of the working dimension')
+    q=q/q.norm()
     basis=[]; diagonal=[]; off=[]; previous=torch.zeros_like(q); beta=q.new_zeros(())
     for i in range(min(dimension,iterations)):
         basis.append(q); z=matvec(q).to(q)
@@ -39,5 +44,7 @@ def lanczos_top_eigenpairs(matvec,dimension,iterations=50,dtype=torch.float32,de
     tri=torch.diag(torch.stack(diagonal))
     if off:
         b=torch.stack(off); tri=tri+torch.diag(b,1)+torch.diag(b,-1)
+    if return_projection:
+        return tri
     values,vectors=torch.linalg.eigh(tri)
     return values.flip(0),(torch.stack(basis,dim=1)@vectors).flip(1)

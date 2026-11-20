@@ -207,3 +207,14 @@ or `adam`). The GPU worker waits for the exact ready marker, checks checkpoint
 lineage and parameter order, then measures the spectrum in FP32. Adam uses
 the bias-corrected second moments saved at that checkpoint. Residual predictions
 are local to the checkpoint and reuse the same KL proxy as at step zero.
+
+`scripts/run_residual_k3.py` runs a bounded K3 diagnostic with a different
+linearization. It differentiates the per-token residual sqrt(2 KL + epsilon)
+and starts Lanczos at that residual. The tridiagonal projection therefore
+acts on the full initial residual, including components outside the largest
+50 modes. Step-zero forecasts use the same clipping, momentum, weight decay,
+and sequence-sum batch normalization as the measured FP32 LoRA SGD controls.
+They use no future gradient norms. The 40/60-iteration comparison diagnoses
+projection error. Step-50/100 spectra show how the residual-weighted geometry
+changes after SGD. The launcher takes an ordered per-GPU schedule, records its
+deadline, and keeps each worker and its subprocesses under a 12-hour GNU timeout.
