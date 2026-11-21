@@ -228,3 +228,5 @@ and the GPU is checked again when the predecessor releases it.
 An SGD stage may set `forecast_from` to a completed, matching step-zero
 projection directory. The launcher writes the pre-run forecast before the
 first SGD update, including for the `1e-3` follow-up rate.
+Set `save_final_adapter: true` on an SGD stage to save the adapter at the
+last measured step, with a ready marker for downstream evaluation.

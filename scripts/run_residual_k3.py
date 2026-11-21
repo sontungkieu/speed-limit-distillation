@@ -79,6 +79,8 @@ def run(args):
         try:
             if stage.get('save_checkpoints'):
                 common.append('--save-checkpoints')
+            if stage.get('save_final_adapter'):
+                common.append('--save-final-adapter')
             if stage.get('forecast_from'):
                 common += ['--forecast-from', stage['forecast_from']]
             if step:
