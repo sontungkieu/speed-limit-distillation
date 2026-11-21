@@ -246,3 +246,8 @@ uses the existing 480-sample AIME24/25 dev protocol. It also generates on the
 same 128 held-out prompts per model and scores fresh top-64 KL and response
 length. A final `gate-summary` stage collects all six matched runs and the
 base model, and writes per-case and equal-set LR averages to `complete.json`.
+`scripts/close_k3_gate.py` can wait for that receipt and persist a Gate 1
+recommendation with the prior K2/K3 evidence. It chooses the largest tested
+LoRA-SGD rate whose mean held-out KL improves, fresh length does not increase
+and dev accuracy does not decrease relative to the initial student. These are
+strict point-estimate checks for this experiment.
