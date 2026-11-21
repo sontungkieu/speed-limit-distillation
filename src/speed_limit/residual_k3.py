@@ -1,5 +1,6 @@
 """Project clipped SGD dynamics onto a Krylov space started at the KL residual."""
 import argparse
+import json
 import math
 import os
 from pathlib import Path
@@ -151,7 +152,8 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--task', choices=('spectrum', 'sgd'), required=True)
     parser.add_argument('--set-index', type=int, choices=range(3), required=True)
-    parser.add_argument('--lr', type=float, choices=RATES, default=1e-4)
+    parser.add_argument('--lr', type=float, choices=(*RATES, 1e-3), default=1e-4)
+    parser.add_argument('--forecast-from', type=Path)
     parser.add_argument('--step', type=int, choices=(0, 50, 100), default=0)
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--save-checkpoints', action='store_true')
@@ -159,6 +161,8 @@ def main():
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.step) or (args.checkpoint and args.task != 'spectrum'):
         parser.error('Provide a checkpoint path with a nonzero spectrum step')
+    if args.forecast_from and args.task != 'sgd':
+        parser.error('A saved forecast projection is only used for an SGD comparison')
     uuid = str(torch.cuda.get_device_properties(0).uuid).lower().removeprefix('gpu-')
     if uuid != os.environ.get('SPEED_LIMIT_GPU_UUID', '').lower().removeprefix('gpu-'):
         raise RuntimeError('CUDA GPU UUID differs from requested device')
@@ -180,6 +184,29 @@ def main():
     if args.checkpoint:
         contract['checkpoint'], _ = load_lora_checkpoint(student, args.checkpoint, args.step, contract, 'none')
     write_json(args.output / 'contract.json', contract)
+    if args.forecast_from:
+        reference = json.loads((args.forecast_from / 'contract.json').read_text())
+        receipt = json.loads((args.forecast_from / 'complete.json').read_text())
+        if reference['task'] != 'spectrum' or receipt['step'] != 0 or receipt['matvecs'] != 60:
+            raise ValueError('Expected a completed step-zero projection')
+        for field in ('set_index', 'row_ids', 'cache_manifests', 'model_path', 'seed', 'precision',
+                      'objective', 'adapter_rank', 'adapter_alpha', 'adapter_layers',
+                      'momentum', 'weight_decay', 'clip'):
+            if reference[field] != contract[field]:
+                raise ValueError(f'Forecast projection differs on {field}')
+        if receipt['rollout_count'] != len(records) or receipt['state_count'] != sum(len(r['response']) for r in records):
+            raise ValueError('Projection state count differs from the training set')
+        projection = torch.load(args.forecast_from / 'projection.pt', map_location='cpu', weights_only=True)
+        full = project_sgd(projection['tridiagonal'], receipt['initial_norm'], receipt['rollout_count'],
+                           receipt['state_count'], args.lr, STEPS)
+        short = project_sgd(projection['tridiagonal'][:40, :40], receipt['initial_norm'],
+                            receipt['rollout_count'], receipt['state_count'], args.lr, STEPS)
+        full['projection_40_vs_full_max_gap_first_50'] = max(
+            abs(a - b) for a, b in zip(full['curve'][:51], short['curve'][:51]))
+        write_json(args.output / 'forecast.json', {
+            **full, 'source': str(args.forecast_from), 'source_revision': reference['revision'],
+            'set_index': args.set_index, 'lr': args.lr,
+        })
     print('RESIDUAL_READY', args.task, args.set_index, args.step, flush=True)
     model = CandidateLoss(student)
     batches = [make_batch(record) for record in records]

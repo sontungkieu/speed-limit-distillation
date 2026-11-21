@@ -79,6 +79,8 @@ def run(args):
         try:
             if stage.get('save_checkpoints'):
                 common.append('--save-checkpoints')
+            if stage.get('forecast_from'):
+                common += ['--forecast-from', stage['forecast_from']]
             if step:
                 checkpoint = Path(stage['checkpoint'])
                 if not (checkpoint / 'ready.json').is_file():

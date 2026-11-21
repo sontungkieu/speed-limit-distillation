@@ -225,3 +225,6 @@ detach and before every stage.
 `--after-role` allows a queued worker to wait for a specific predecessor on
 the same host and physical GPU. The wait counts toward the watchdog deadline,
 and the GPU is checked again when the predecessor releases it.
+An SGD stage may set `forecast_from` to a completed, matching step-zero
+projection directory. The launcher writes the pre-run forecast before the
+first SGD update, including for the `1e-3` follow-up rate.
