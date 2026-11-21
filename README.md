@@ -251,3 +251,8 @@ recommendation with the prior K2/K3 evidence. It chooses the largest tested
 LoRA-SGD rate whose mean held-out KL improves, fresh length does not increase
 and dev accuracy does not decrease relative to the initial student. These are
 strict point-estimate checks for this experiment.
+
+`scripts/schedule_k3_cutoff.py` can apply an earlier wall-clock deadline to
+already detached K3 and Gate 1 sessions. Pass the exact host and launch
+receipts. It verifies process identity, watches the owned sessions and their
+descendants, and records whether the jobs finished or reached the cutoff.
