@@ -230,3 +230,19 @@ projection directory. The launcher writes the pre-run forecast before the
 first SGD update, including for the `1e-3` follow-up rate.
 Set `save_final_adapter: true` on an SGD stage to save the adapter at the
 last measured step, with a ready marker for downstream evaluation.
+
+### K3 learning-rate evaluation
+
+Run a second, detached `run_residual_k3.py` queue with `--after-role` on each
+of the same physical GPUs. Each `gate-eval` schedule entry names a replayed
+`checkpoint`, its `trained_role` receipt and `source_stage`, and the `reference`
+directory for the original SGD curve. A base-model entry omits these fields.
+The replay must match the original training contract and differ by at most
+0.001 in normalized KL across the entire 300-step trajectory.
+
+The evaluator scores the 256 fixed held-out rollouts with the FP32 student.
+It merges the replayed adapter into the student for BF16 vLLM generation and
+uses the existing 480-sample AIME24/25 dev protocol. It also generates on the
+same 128 held-out prompts per model and scores fresh top-64 KL and response
+length. A final `gate-summary` stage collects all six matched runs and the
+base model, and writes per-case and equal-set LR averages to `complete.json`.

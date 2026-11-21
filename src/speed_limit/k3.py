@@ -25,6 +25,13 @@ def cached_set(cache, set_index):
     if (len(pool) != 2048 or len(set(pool)) != 2048 or set(pool) & set(splits['heldout'])
             or rows != random.Random(set_index).sample(pool, 64)):
         raise ValueError('Fixed state-set split differs from the campaign')
+    records, fingerprints = cached_rows(cache, rows)
+    return records, {'row_ids': rows, 'cache_manifests': fingerprints, 'splits_sha256': sha256(splits_path)}
+
+
+def cached_rows(cache, rows):
+    if len(rows) != len(set(rows)) or not rows:
+        raise ValueError('Expected distinct cached rollout row IDs')
     selection = set(rows)
     index = {}
     fingerprints = []
@@ -43,9 +50,8 @@ def cached_set(cache, set_index):
                 raise ValueError(f'Duplicate row or cache hash mismatch in {source}')
             index.update((row, source) for row in included)
     if len(index) != len(rows):
-        raise ValueError('Incomplete cached state set')
-    records = load_rows(index, rows)
-    return records, {'row_ids': rows, 'cache_manifests': fingerprints, 'splits_sha256': sha256(splits_path)}
+        raise ValueError('Incomplete cached rollout selection')
+    return load_rows(index, rows), fingerprints
 
 
 def make_batch(record, limit=None):

@@ -2,6 +2,7 @@
 import argparse
 import csv
 import json
+from statistics import mean
 import os
 from pathlib import Path
 import socket
@@ -43,6 +44,90 @@ def predecessor(args):
     return state
 
 
+def gate_eval(queue, stage, path):
+    args = queue.a
+    command = [queue.python, '-m', 'speed_limit.k3_gate']
+    options = ['--inputs', str(args.inputs), '--cache', str(args.cache), '--output', str(path)]
+    if 'checkpoint' in stage:
+        checkpoint = Path(stage['checkpoint'])
+        trained_role = Path(stage['trained_role'])
+        ready = checkpoint / 'ready.json'
+        complete = checkpoint.parent / 'complete.json'
+        while not (ready.is_file() and complete.is_file()):
+            state = json.loads(trained_role.read_text())
+            if stage['source_stage'] in (state.get('failures') or {}) or state['phase'] in ('complete', 'failed'):
+                if ready.is_file() and complete.is_file():
+                    break
+                raise RuntimeError(f'Training role ended without completed checkpoint: {checkpoint}')
+            queue.save(phase=f"wait-{stage['name']}", waiting_for=[str(ready), str(complete)])
+            time.sleep(10)
+        options += ['--checkpoint', str(checkpoint), '--reference', stage['reference']]
+    for phase in ('prepare', 'generate', 'score'):
+        queue.check_gpu()
+        queue.invoke(f"{stage['name']}-{phase}", command=[*command, phase, *options])
+
+
+def gate_summary(queue, stage, path):
+    from speed_limit.queue import save
+
+    root = queue.a.run.parent
+    schedules = json.loads(queue.a.schedule.read_text())
+    cases = [(role, job['name']) for role, jobs in schedules.items() for job in jobs
+             if job['task'] == 'gate-eval']
+    metrics = {}
+    for role, name in cases:
+        case_root = root / f'gpu-{role}'
+        source = case_root / name / 'complete.json'
+        while not source.is_file():
+            state_file = case_root / f'role-{role}.json'
+            if state_file.is_file():
+                state = json.loads(state_file.read_text())
+                if name in (state.get('failures') or {}) or state['phase'] in ('complete', 'failed'):
+                    if source.is_file():
+                        break
+                    raise RuntimeError(f'Evaluation ended without results: {source}')
+            queue.save(phase=stage['name'], waiting_for=[str(source)])
+            time.sleep(15)
+        result = json.loads(source.read_text())
+        metrics[name] = {'receipt': str(source), 'replay': result['heldout']['replay'],
+                         'heldout_kl': result['heldout']['mean_kl_per_token'],
+                         'dev_accuracy': result['dev']['mean_accuracy'], 'benchmarks': result['dev']['benchmarks'],
+                         'fresh_kl': result['fresh']['mean_kl_per_token'],
+                         'fresh_mean_tokens': result['fresh']['mean_response_tokens'],
+                         'fresh_capped': result['fresh']['capped']}
+    rates = {}
+    for rate in (3e-4, 1e-3):
+        runs = [item for item in metrics.values() if item['replay'] and item['replay']['lr'] == rate]
+        if {item['replay']['set_index'] for item in runs} != {0, 1, 2} or len(runs) != 3:
+            raise ValueError(f'Expected one evaluation per set for LR {rate}')
+        rates[f'{rate:.0e}'] = {key: mean(item[key] for item in runs) for key in
+                               ('heldout_kl', 'dev_accuracy', 'fresh_kl', 'fresh_mean_tokens', 'fresh_capped')}
+    path.mkdir()
+    save(path / 'complete.json', {'cases': metrics, 'means_by_lr': rates, 'baseline': metrics['base']})
+
+
+def residual_stage(queue, stage, path):
+    args = queue.a
+    task = stage['task']
+    step = stage.get('step', 0)
+    options = ['--inputs', str(args.inputs), '--cache', str(args.cache), '--output', str(path),
+               '--set-index', str(stage['set_index']), '--task', task, '--step', str(step),
+               '--lr', str(stage.get('lr', 1e-4)), '--revision', args.revision]
+    if stage.get('save_checkpoints'):
+        options.append('--save-checkpoints')
+    if stage.get('save_final_adapter'):
+        options.append('--save-final-adapter')
+    if stage.get('forecast_from'):
+        options += ['--forecast-from', stage['forecast_from']]
+    if step:
+        checkpoint = Path(stage['checkpoint'])
+        if not (checkpoint / 'ready.json').is_file():
+            raise RuntimeError(f'Expected earlier stage to publish {checkpoint}')
+        options += ['--checkpoint', str(checkpoint)]
+    queue.check_gpu()
+    queue.invoke(stage['name'], command=[queue.python, '-m', 'speed_limit.residual_k3', *options])
+
+
 def run(args):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.source / 'src'))
@@ -70,26 +155,15 @@ def run(args):
     stages = json.loads(args.schedule.read_text())[str(args.role)]
     results, failures = {}, {}
     for stage in stages:
-        name, task = stage['name'], stage['task']
+        name = stage['name']
         path = args.run / name
-        step = stage.get('step', 0)
-        common = ['--inputs', str(args.inputs), '--cache', str(args.cache), '--output', str(path),
-                  '--set-index', str(stage['set_index']), '--task', task, '--step', str(step),
-                  '--lr', str(stage.get('lr', 1e-4)), '--revision', args.revision]
         try:
-            if stage.get('save_checkpoints'):
-                common.append('--save-checkpoints')
-            if stage.get('save_final_adapter'):
-                common.append('--save-final-adapter')
-            if stage.get('forecast_from'):
-                common += ['--forecast-from', stage['forecast_from']]
-            if step:
-                checkpoint = Path(stage['checkpoint'])
-                if not (checkpoint / 'ready.json').is_file():
-                    raise RuntimeError(f'Expected earlier stage to publish {checkpoint}')
-                common += ['--checkpoint', str(checkpoint)]
-            queue.check_gpu()
-            queue.invoke(name, command=[queue.python, '-m', 'speed_limit.residual_k3', *common])
+            if stage['task'] == 'gate-eval':
+                gate_eval(queue, stage, path)
+            elif stage['task'] == 'gate-summary':
+                gate_summary(queue, stage, path)
+            else:
+                residual_stage(queue, stage, path)
             receipt = path / 'complete.json'
             json.loads(receipt.read_text())
             results[name] = str(receipt)
