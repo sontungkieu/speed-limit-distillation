@@ -43,6 +43,8 @@
       "gpu_per_run": 0, "output": "Decision memo, selected LR when justified, and continue, pivot, replay or hold"},
     {"id": "pivot_or_replay", "phase": "1", "depends_on": ["gate1"], "gpu_per_run": 0,
       "when": {"gate1": ["pivot", "replay", "hold"]}, "output": "Record the decision and scope of any revised plan"},
+    {"id": "k3_checkpoint_frontier", "phase": "1", "depends_on": ["k3_spectra", "base_eval"], "gpu_per_run": 1,
+      "matrix": "configs/k3-frontier.json", "output": "Matched LR and early-stopping comparison when terminal checkpoint generalization is insufficient"},
     {"id": "e1_sets", "phase": "2", "depends_on": ["gate1", "build_cache"], "gpu_per_run": 0,
       "when": {"gate1": ["continue"]}, "matrix": {"category_counts": {"random": 8, "topic": 4, "longest": 4, "highest_kl": 4}, "m": 64},
       "output": "Frozen 20 state sets, with matched initial baselines and pinned LR"},

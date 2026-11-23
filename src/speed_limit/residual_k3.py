@@ -121,6 +121,10 @@ def train(args, model, batches, parameters, contract):
 
     initial = mean_kl()
     curve = [1.]
+    checkpoints = set(args.checkpoint_steps)
+    if args.save_checkpoints:
+        checkpoints.update((50, 100))
+    earliest_stop = max(50, *checkpoints) if checkpoints else 50
 
     def save_adapter(step):
         folder = args.output / f'checkpoint-{step:04d}'
@@ -142,11 +146,11 @@ def train(args, model, batches, parameters, contract):
                'clip_factor': min(1., CLIP / (float(norm) + 1e-6)), 'seconds': time.monotonic() - started}
         append_json(args.output / 'absorption.jsonl', row)
         print('RESIDUAL_SGD', args.set_index, args.lr, step, row['A'], row['seconds'], flush=True)
-        if args.save_checkpoints and step in (50, 100):
+        if step in checkpoints:
             save_adapter(step)
-        if curve[-1] < .1 and (step >= 100 if args.save_checkpoints else step >= 50):
+        if curve[-1] < .1 and step >= earliest_stop:
             break
-    if args.save_final_adapter and not (args.save_checkpoints and step in (50, 100)):
+    if args.save_final_adapter and step not in checkpoints:
         save_adapter(step)
     return {'set_index': args.set_index, 'lr': args.lr, 'curve': curve, 'initial_mean_kl': initial,
             'times': absorption_times(torch.tensor(curve, dtype=torch.float64))}
@@ -164,14 +168,15 @@ def main():
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--save-checkpoints', action='store_true')
     parser.add_argument('--save-final-adapter', action='store_true')
+    parser.add_argument('--checkpoint-steps', type=int, nargs='+', choices=range(1, STEPS + 1), default=())
     parser.add_argument('--revision', required=True)
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.step) or (args.checkpoint and args.task != 'spectrum'):
         parser.error('Provide a checkpoint path with a nonzero spectrum step')
     if args.forecast_from and args.task != 'sgd':
         parser.error('A saved forecast projection is only used for an SGD comparison')
-    if args.save_final_adapter and args.task != 'sgd':
-        parser.error('Only SGD saves a final adapter')
+    if (args.save_final_adapter or args.checkpoint_steps) and args.task != 'sgd':
+        parser.error('Only SGD saves adapters')
     uuid = str(torch.cuda.get_device_properties(0).uuid).lower().removeprefix('gpu-')
     if uuid != os.environ.get('SPEED_LIMIT_GPU_UUID', '').lower().removeprefix('gpu-'):
         raise RuntimeError('CUDA GPU UUID differs from requested device')

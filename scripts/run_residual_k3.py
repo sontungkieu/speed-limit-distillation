@@ -1,4 +1,4 @@
-"""Run the ordered K3 residual/SGD stages on one verified GPU for up to 12 hours."""
+"""Run the ordered K3 residual/SGD stages on one verified GPU."""
 import argparse
 import csv
 import json
@@ -61,9 +61,12 @@ def gate_eval(queue, stage, path):
                 raise RuntimeError(f'Training role ended without completed checkpoint: {checkpoint}')
             queue.save(phase=f"wait-{stage['name']}", waiting_for=[str(ready), str(complete)])
             time.sleep(10)
-        options += ['--checkpoint', str(checkpoint), '--reference', stage['reference']]
+        options += ['--checkpoint', str(checkpoint), '--reference', stage['reference'],
+                    '--checkpoint-step', str(stage.get('checkpoint_step', 300))]
     if stage.get('prior'):
         options += ['--prior', stage['prior']]
+    if stage.get('temporary_merge'):
+        options.append('--temporary-merge')
     for phase in ('prepare', 'generate', 'score'):
         queue.check_gpu()
         queue.invoke(f"{stage['name']}-{phase}", command=[*command, phase, *options])
@@ -139,6 +142,8 @@ def residual_stage(queue, stage, path):
         options.append('--save-checkpoints')
     if stage.get('save_final_adapter'):
         options.append('--save-final-adapter')
+    if stage.get('checkpoint_steps'):
+        options.extend(['--checkpoint-steps', *map(str, stage['checkpoint_steps'])])
     if stage.get('forecast_from'):
         options += ['--forecast-from', stage['forecast_from']]
     if step:
@@ -205,7 +210,9 @@ def main():
     for name in ('host', 'gpu', 'revision'):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--role', type=int, choices=range(4), required=True)
-    parser.add_argument('--seconds', type=int, default=43200)
+    duration = parser.add_mutually_exclusive_group()
+    duration.add_argument('--seconds', type=int)
+    duration.add_argument('--deadline-epoch', type=int)
     parser.add_argument('--mps-server', type=int)
     parser.add_argument('--mps-pipe', type=Path)
     parser.add_argument('--after-role', type=Path, help='Wait for an earlier worker on this physical GPU')
@@ -213,8 +220,10 @@ def main():
     args = parser.parse_args()
     if socket.gethostname() != args.host:
         parser.error('Launch host does not match the allocation')
-    if args.seconds <= 5 or args.seconds > 43200:
-        parser.error('Worker duration must allow the five-second termination grace')
+    now = time.time()
+    deadline = args.deadline_epoch if args.deadline_epoch is not None else now + (43200 if args.seconds is None else args.seconds)
+    if not 5 < deadline - now <= 108000:
+        parser.error('Worker must allow the termination grace and fit within 30 hours')
     if bool(args.mps_server) != bool(args.mps_pipe):
         parser.error('Supply both the verified MPS server PID and its control pipe')
     if args.mps_server is not None and args.mps_server <= 0:
@@ -228,16 +237,17 @@ def main():
     else:
         gpu_preflight(args)
     args.run.mkdir(parents=True, exist_ok=False)
-    argv = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=5s', str(args.seconds - 5),
+    started = time.time()
+    seconds = deadline - started
+    argv = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=5s', str(seconds - 5),
             sys.executable, str(Path(__file__).resolve()),
             *(arg for arg in sys.argv[1:] if arg != '--detach')]
-    started = time.time()
     with (args.run / 'controller.log').open('xb') as log:
         child = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log,
                                  stderr=subprocess.STDOUT, start_new_session=True)
     receipt = {'watchdog_pid': child.pid, 'host': args.host, 'gpu': args.gpu, 'role': args.role,
                'revision': args.revision, 'started_at': started,
-               'deadline_epoch': started + args.seconds, 'duration_seconds': args.seconds,
+               'deadline_epoch': deadline, 'duration_seconds': seconds,
                'after_role': str(args.after_role) if args.after_role else None}
     (args.run / 'launch.json').write_text(json.dumps(receipt, indent=2))
     print(json.dumps(receipt), flush=True)

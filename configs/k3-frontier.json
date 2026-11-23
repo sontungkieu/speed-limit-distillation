@@ -1,0 +1,16 @@
+{
+  "state_sets": [0, 1, 2],
+  "rates": ["3e-5", "1e-4", "3e-4", "1e-3"],
+  "primary_checkpoints": [25, 50, 100, 300],
+  "additional_checkpoints": [10, 200],
+  "reuse_original_terminal_rates": ["3e-4", "1e-3"],
+  "reuse_existing_checkpoints": {"1e-4": [50, 100]},
+  "matrix_by_gpu": {
+    "0": [[0, "1e-4"], [1, "3e-4"], [2, "1e-3"]],
+    "1": [[1, "1e-4"], [2, "3e-4"], [0, "3e-5"]],
+    "2": [[2, "1e-4"], [0, "1e-3"], [1, "3e-5"]],
+    "3": [[2, "3e-5"], [0, "3e-4"], [1, "1e-3"]]
+  },
+  "comparison": "Matched fixed held-out KL, AIME24/25 dev accuracy and fresh-rollout length and KL at the same checkpoint. Mark whether all three sets have absorbed half the initial fixed-set KL by that checkpoint.",
+  "interpretation": "Exploratory rate and early-stopping diagnostic. The original Gate 1 decision and final benchmarks remain separate."
+}

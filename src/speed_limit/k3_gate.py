@@ -4,6 +4,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 
 import torch
 
@@ -57,7 +58,9 @@ def load_student(args):
     layers = enable_lora(student)
     if str(path) != contract['model_path'] or layers != contract['adapter_layers']:
         raise ValueError('Evaluation student differs from replay configuration')
-    replay['checkpoint'], _ = load_lora_checkpoint(student, args.checkpoint, FINAL_STEP, contract, 'none')
+    replay['checkpoint'], _ = load_lora_checkpoint(student, args.checkpoint, args.checkpoint_step, contract, 'none')
+    if args.checkpoint_step != FINAL_STEP:
+        replay['A_at_checkpoint'] = read(args.checkpoint.parent / 'complete.json')['curve'][args.checkpoint_step]
     return student, layers, replay
 
 
@@ -113,7 +116,7 @@ def prepare(args):
         if abs(probe - merged) > 1e-3:
             raise ValueError(f'Merged LoRA KL probe differs: {probe} versus {merged}')
         result['fp32_merge_probe_gap'] = abs(probe - merged)
-        student.to(device='cpu', dtype=torch.bfloat16).save_pretrained(args.output / 'merged', safe_serialization=True)
+        student.to(device='cpu', dtype=torch.bfloat16).save_pretrained(merged_path(args, args.output), safe_serialization=True)
     write_json(args.output / 'heldout.json', {**result, 'replay': replay,
                                              'splits_sha256': split_sha, 'cache_manifests': manifests})
     print('K3_HELDOUT_COMPLETE', result['mean_kl_per_token'], flush=True)
@@ -123,10 +126,13 @@ def reuse_heldout(args):
     previous = read(args.prior / 'heldout.json')
     contract, replay = checked_replay(args.checkpoint, args.reference)
     ready = read(args.checkpoint / 'ready.json')
-    if (ready['step'], ready['revision']) != (FINAL_STEP, contract['revision']):
+    step = args.checkpoint_step
+    if (ready['step'], ready['revision']) != (step, contract['revision']):
         raise ValueError('Checkpoint ready receipt differs from the replay contract')
     replay['checkpoint'] = {'path': str(args.checkpoint), 'training_revision': contract['revision'],
-                            'adapter_sha256': sha256(args.checkpoint / 'adapter.pt'), 'step': FINAL_STEP}
+                            'adapter_sha256': sha256(args.checkpoint / 'adapter.pt'), 'step': step}
+    if step != FINAL_STEP:
+        replay['A_at_checkpoint'] = read(args.checkpoint.parent / 'complete.json')['curve'][step]
     split_path = args.cache / 'splits.json'
     manifests = [sha256(args.cache / f'shard-{i}' / 'complete.json') for i in range(2)]
     if (replay != previous['replay'] or previous['splits_sha256'] != sha256(split_path)
@@ -149,7 +155,7 @@ def reuse_dev(args, step):
     if not started.is_file():
         return False
     contract = read(started)
-    expected = {'checkpoint': str(args.prior / 'merged'), 'checkpoint_step': step, 'task': 'evaluate',
+    expected = {'checkpoint': str(prior_merged_path(args.prior)), 'checkpoint_step': step, 'task': 'evaluate',
                 'seed': 0, 'dev': True, 'canary': False, 'inputs': str(args.inputs)}
     if any(contract.get(key) != value for key, value in expected.items()):
         raise ValueError('Saved generation contract differs from the requested dev evaluation')
@@ -175,10 +181,13 @@ def reuse_dev(args, step):
 
 def generate(args):
     result = read(args.output / 'heldout.json')
-    step = FINAL_STEP if args.checkpoint else 0
+    step = args.checkpoint_step if args.checkpoint else 0
     args.output = args.output / 'dev'
     root = args.prior or args.output.parent
-    args.checkpoint = root / 'merged' if result['replay'] else None
+    if result['replay']:
+        args.checkpoint = prior_merged_path(root) if args.prior else merged_path(args, root)
+    else:
+        args.checkpoint = None
     args.checkpoint_step, args.dev, args.seed, args.canary = step, True, 0, False
     args.batch_size, args.cap, args.steps, args.task = 128, 4096, 1, 'evaluate'
     dev_saved = bool(args.prior and reuse_dev(args, step))
@@ -212,7 +221,7 @@ def score(args):
     records = read(args.output / 'fresh-rollouts.json')
     if [record['row_id'] for record in records] != heldout['row_ids'][:FRESH_COUNT]:
         raise ValueError('Fresh rollout IDs differ from the held-out subset')
-    step = FINAL_STEP if args.checkpoint else 0
+    step = args.checkpoint_step if args.checkpoint else 0
     dev = read(args.output / 'dev' / f'eval-step-{step:04d}.json')
     check_dev(dev)
     student, _, replay = load_student(args)
@@ -231,6 +240,22 @@ def score(args):
                  empty=sum(length == 0 for length in lengths))
     write_json(args.output / 'complete.json', {'heldout': heldout, 'dev': dev, 'fresh': fresh})
     print('K3_GATE_CASE_COMPLETE', dev['mean_accuracy'], fresh['mean_response_tokens'], flush=True)
+    if args.temporary_merge and args.checkpoint:
+        temporary = merged_path(args, args.output)
+        if temporary.resolve().parent == args.output.resolve() / 'tmp':
+            try:
+                shutil.rmtree(temporary)
+            except OSError as error:
+                print('K3_MERGE_CLEANUP_PENDING', error, flush=True)
+
+
+def merged_path(args, root):
+    return root / 'tmp' / 'merged' if args.temporary_merge else root / 'merged'
+
+
+def prior_merged_path(root):
+    temporary = root / 'tmp' / 'merged'
+    return temporary if temporary.is_dir() else root / 'merged'
 
 
 def main():
@@ -239,13 +264,17 @@ def main():
     for name in ('inputs', 'cache', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--checkpoint', type=Path)
+    parser.add_argument('--checkpoint-step', type=int, choices=range(1, FINAL_STEP + 1), default=FINAL_STEP)
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--prior', type=Path)
+    parser.add_argument('--temporary-merge', action='store_true')
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.reference):
         parser.error('Supply both the replayed adapter checkpoint and the original training run')
     if args.prior and not args.checkpoint:
         parser.error('A prior evaluation must match a replayed adapter checkpoint')
+    if args.prior and args.temporary_merge:
+        parser.error('Resume uses its existing merged-model directory')
     uuid = str(torch.cuda.get_device_properties(0).uuid).lower().removeprefix('gpu-')
     if uuid != os.environ.get('SPEED_LIMIT_GPU_UUID', '').lower().removeprefix('gpu-'):
         raise RuntimeError('CUDA GPU UUID differs from requested device')

@@ -264,6 +264,16 @@ stage can include `external_cases` by name with `receipt` and, for cases
 still in progress, an optional worker `state` path. The Gate requires seven
 matched case receipts in total.
 
+The extended LR/checkpoint comparison reuses the same held-out, dev and fresh
+protocol. SGD stages can list `checkpoint_steps`. Evaluators supply the
+matching `checkpoint_step`, replay reference and optional `temporary_merge`.
+The latter keeps the merged weights under the case's `tmp` directory and
+removes them after scoring succeeds. Use `--deadline-epoch` for the same
+absolute cutoff on all workers, up to 30 hours from admission.
+`scripts/report_k3_frontier.py` combines checkpoint receipts with the existing
+baseline and terminal-step Gate 1 cases. Only groups with all three state sets
+receive a quality comparison.
+
 `scripts/schedule_k3_cutoff.py` can apply an earlier wall-clock deadline to
 already detached K3 and Gate 1 sessions. Pass the exact host and launch
 receipts. It verifies process identity, watches the owned sessions and their
