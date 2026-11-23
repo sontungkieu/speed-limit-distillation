@@ -51,11 +51,12 @@ def gate_eval(queue, stage, path):
     if 'checkpoint' in stage:
         checkpoint = Path(stage['checkpoint'])
         trained_role = Path(stage['trained_role'])
+        source_stage = stage.get('source_stage', checkpoint.parent.name)
         ready = checkpoint / 'ready.json'
         complete = checkpoint.parent / 'complete.json'
         while not (ready.is_file() and complete.is_file()):
             state = json.loads(trained_role.read_text())
-            if stage['source_stage'] in (state.get('failures') or {}) or state['phase'] in ('complete', 'failed'):
+            if source_stage in (state.get('failures') or {}) or state['phase'] in ('complete', 'failed'):
                 if ready.is_file() and complete.is_file():
                     break
                 raise RuntimeError(f'Training role ended without completed checkpoint: {checkpoint}')
