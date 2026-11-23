@@ -1,5 +1,9 @@
 # Speed Limit of Distillation
 
+The [experiment DAG manifest](configs/experiment-dag.json) lists the full
+plan's run matrices, receipt dependencies and conditional gates. The
+[editable diagram](artifacts/experiment-dag.drawio) shows the main paths.
+
 Phase 0 implementation of [the experiment plan](experiment-plan.md), using
 Qwen3-1.7B non-thinking, Qwen3-4B-Instruct-2507 and the pinned 14,116-row DAPO input.
 This is an independent Transformers/vLLM reconstruction using the existing

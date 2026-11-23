@@ -1,0 +1,140 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<mxfile host="app.diagrams.net">
+  <diagram id="experiment-dag" name="Speed Limit of Distillation">
+    <mxGraphModel page="1" pageWidth="1220" pageHeight="1450" grid="1" gridSize="10">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" vertex="1" style="text;html=1;whiteSpace=wrap;align=left;fontColor=#13253D;fontSize=24;fontStyle=1;strokeColor=none;fillColor=none;" value="Speed Limit of Distillation">
+          <mxGeometry as="geometry" x="65" y="25" width="750" height="28" />
+        </mxCell>
+        <mxCell id="phase0" parent="1" vertex="1" style="text;html=1;whiteSpace=wrap;align=left;fontColor=#13253D;fontSize=14;fontStyle=1;strokeColor=none;fillColor=none;" value="PHASE 0 · REPRODUCTION">
+          <mxGeometry as="geometry" x="65" y="102" width="270" height="28" />
+        </mxCell>
+        <mxCell id="phase1" parent="1" vertex="1" style="text;html=1;whiteSpace=wrap;align=left;fontColor=#13253D;fontSize=14;fontStyle=1;strokeColor=none;fillColor=none;" value="PHASE 1 · KILL TESTS">
+          <mxGeometry as="geometry" x="65" y="409" width="270" height="28" />
+        </mxCell>
+        <mxCell id="phase2" parent="1" vertex="1" style="text;html=1;whiteSpace=wrap;align=left;fontColor=#13253D;fontSize=14;fontStyle=1;strokeColor=none;fillColor=none;" value="PHASE 2 · SELECTION">
+          <mxGeometry as="geometry" x="65" y="894" width="270" height="28" />
+        </mxCell>
+        <mxCell id="final" parent="1" vertex="1" style="text;html=1;whiteSpace=wrap;align=left;fontColor=#13253D;fontSize=14;fontStyle=1;strokeColor=none;fillColor=none;" value="FINAL EVALS &amp;amp; PAPER">
+          <mxGeometry as="geometry" x="65" y="1285" width="270" height="28" />
+        </mxCell>
+        <mxCell id="inputs" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#EAF1F8;strokeColor=#778DA9;" value="&lt;b&gt;Pinned inputs&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Model pair, tokenizer, DAPO and benchmarks&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="82" width="290" height="65" />
+        </mxCell>
+        <mxCell id="repro" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;Cache → Semi-OPD → eval&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;14,116 rollouts · step 60 / 80 / 100 · avg@32&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="192" width="290" height="65" />
+        </mxCell>
+        <mxCell id="calibration" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;Calibration&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;10 OPD steps and dense Gram check&lt;/span&gt;">
+          <mxGeometry as="geometry" x="830" y="192" width="282" height="65" />
+        </mxCell>
+        <mxCell id="phase0_gate" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#FFF1D4;strokeColor=#B58736;" value="&lt;b&gt;Phase 0 gate&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Within about 3 points of 39.8% and record B200 cost&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="308" width="290" height="65" />
+        </mxCell>
+        <mxCell id="k1" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;K1 · LR tuning&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;15 AdamW runs → 6 SGD controls&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="425" width="290" height="65" />
+        </mxCell>
+        <mxCell id="k2" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;K2 · Objective controls&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Sampled, top-64 and vOPD across S0–S2&lt;/span&gt;">
+          <mxGeometry as="geometry" x="85" y="560" width="282" height="65" />
+        </mxCell>
+        <mxCell id="k3" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;K3 · Spectral prediction&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Three sets × checkpoints 0 / 50 / 100&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="560" width="290" height="65" />
+        </mxCell>
+        <mxCell id="matched" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;Matched LR eval&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;6 adapters · 1 baseline · held-out, dev and fresh&lt;/span&gt;">
+          <mxGeometry as="geometry" x="830" y="560" width="282" height="65" />
+        </mxCell>
+        <mxCell id="gate1" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#FFF1D4;strokeColor=#B58736;" value="&lt;b&gt;Gate 1 · Choose direction&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Consolidate K1–K3 and choose lr* when supported&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="725" width="290" height="65" />
+        </mxCell>
+        <mxCell id="pivot" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#F0EBF9;strokeColor=#8C76AA;" value="&lt;b&gt;Pivot, replay or hold&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Record blockers or revise the research plan&lt;/span&gt;">
+          <mxGeometry as="geometry" x="830" y="725" width="282" height="65" />
+        </mxCell>
+        <mxCell id="e1" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;E1 · Predict across 20 sets&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Forecast → train. Gate 2 checks rank correlation.&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="870" width="290" height="65" />
+        </mxCell>
+        <mxCell id="e2" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;E2 · Compare selectors&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Gate 3 checks speedup and held-out KL.&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="986" width="290" height="65" />
+        </mxCell>
+        <mxCell id="e3" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#E7F4F0;strokeColor=#548F80;" value="&lt;b&gt;E3 · Time to target&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;10 primary runs · optional second pair&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="1102" width="290" height="65" />
+        </mxCell>
+        <mxCell id="paper" parent="1" vertex="1" style="rounded=1;arcSize=15;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=10;fontColor=#13253D;fontSize=14;strokeWidth=1.5;fillColor=#EAF1F8;strokeColor=#778DA9;" value="&lt;b&gt;Final eval and write-up&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;Freeze lineage · avg@32 · report the outcome&lt;/span&gt;">
+          <mxGeometry as="geometry" x="455" y="1268" width="290" height="65" />
+        </mxCell>
+        <mxCell id="inputs-to-repro" source="inputs" target="repro" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="inputs-to-calibration" source="inputs" target="calibration" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=1;exitY=0.5;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="971" y="114" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="repro-to-phase0_gate" source="repro" target="phase0_gate" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="calibration-to-phase0_gate" source="calibration" target="phase0_gate" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=1;entryY=0.5;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="971" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="phase0_gate-to-k1" source="phase0_gate" target="k1" edge="1" parent="1" value="Pass" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="k1-to-k2" source="k1" target="k2" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0;exitY=0.5;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="226" y="457" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="k1-to-k3" source="k1" target="k3" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="k2-to-k3" source="k2" target="k3" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="k3-to-matched" source="k3" target="matched" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="k2-to-gate1" source="k2" target="gate1" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0;entryY=0.5;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="226" y="757" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="k3-to-gate1" source="k3" target="gate1" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="matched-to-gate1" source="matched" target="gate1" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.8;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="971" y="675" />
+              <mxPoint x="687" y="675" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gate1-to-pivot" source="gate1" target="pivot" edge="1" parent="1" value="Pivot / replay / hold" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="gate1-to-e1" source="gate1" target="e1" edge="1" parent="1" value="Continue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e1-to-e2" source="e1" target="e2" edge="1" parent="1" value="Gate 2 continue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e2-to-e3" source="e2" target="e3" edge="1" parent="1" value="Gate 3 continue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e3-to-paper" source="e3" target="paper" edge="1" parent="1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;fontSize=11;fontColor=#283C55;labelBackgroundColor=#FFFFFF;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
