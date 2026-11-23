@@ -62,6 +62,8 @@ def gate_eval(queue, stage, path):
             queue.save(phase=f"wait-{stage['name']}", waiting_for=[str(ready), str(complete)])
             time.sleep(10)
         options += ['--checkpoint', str(checkpoint), '--reference', stage['reference']]
+    if stage.get('prior'):
+        options += ['--prior', stage['prior']]
     for phase in ('prepare', 'generate', 'score'):
         queue.check_gpu()
         queue.invoke(f"{stage['name']}-{phase}", command=[*command, phase, *options])
@@ -72,14 +74,22 @@ def gate_summary(queue, stage, path):
 
     root = queue.a.run.parent
     schedules = json.loads(queue.a.schedule.read_text())
-    cases = [(role, job['name']) for role, jobs in schedules.items() for job in jobs
-             if job['task'] == 'gate-eval']
-    metrics = {}
-    for role, name in cases:
+    cases = {name: (Path(entry['receipt']), Path(entry['state']) if entry.get('state') else None)
+             for name, entry in stage.get('external_cases', {}).items()}
+    for role, jobs in schedules.items():
         case_root = root / f'gpu-{role}'
-        source = case_root / name / 'complete.json'
+        for job in jobs:
+            if job['task'] == 'gate-eval':
+                name = job['name']
+                if name in cases:
+                    raise ValueError(f'Duplicate evaluation case: {name}')
+                cases[name] = (case_root / name / 'complete.json', case_root / f'role-{role}.json')
+    metrics = {}
+    heldout_identity = None
+    for name, (source, state_file) in cases.items():
         while not source.is_file():
-            state_file = case_root / f'role-{role}.json'
+            if state_file is None:
+                raise ValueError(f'External evaluation receipt is missing: {source}')
             if state_file.is_file():
                 state = json.loads(state_file.read_text())
                 if name in (state.get('failures') or {}) or state['phase'] in ('complete', 'failed'):
@@ -89,6 +99,16 @@ def gate_summary(queue, stage, path):
             queue.save(phase=stage['name'], waiting_for=[str(source)])
             time.sleep(15)
         result = json.loads(source.read_text())
+        current_identity = tuple(result['heldout'][key] for key in ('splits_sha256', 'cache_manifests', 'row_ids'))
+        if heldout_identity is not None and current_identity != heldout_identity:
+            raise ValueError('Gate cases use different held-out splits or cache manifests')
+        heldout_identity = current_identity
+        if (result['heldout']['rollouts'] != 256 or result['fresh']['rollouts'] != 128
+                or result['fresh']['row_ids'] != result['heldout']['row_ids'][:128]
+                or set(result['dev']['benchmarks']) != {'aime24', 'aime25'}
+                or result['dev']['samples_per_problem'] != 8
+                or any(bench['total'] != 240 for bench in result['dev']['benchmarks'].values())):
+            raise ValueError(f'Incomplete held-out, fresh or dev evaluation: {source}')
         metrics[name] = {'receipt': str(source), 'replay': result['heldout']['replay'],
                          'heldout_kl': result['heldout']['mean_kl_per_token'],
                          'dev_accuracy': result['dev']['mean_accuracy'], 'benchmarks': result['dev']['benchmarks'],
@@ -102,6 +122,8 @@ def gate_summary(queue, stage, path):
             raise ValueError(f'Expected one evaluation per set for LR {rate}')
         rates[f'{rate:.0e}'] = {key: mean(item[key] for item in runs) for key in
                                ('heldout_kl', 'dev_accuracy', 'fresh_kl', 'fresh_mean_tokens', 'fresh_capped')}
+    if len(metrics) != 7 or metrics['base']['replay'] is not None:
+        raise ValueError('Expected six adapter cases and the initial student')
     path.mkdir()
     save(path / 'complete.json', {'cases': metrics, 'means_by_lr': rates, 'baseline': metrics['base']})
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 
 from .k3 import cached_rows, load_lora_checkpoint, make_batch
+from .eval_resume import load_batches
 from .legacy import write_json
 from .phase0 import Phase0, distribution, sha256
 from .spectral import CandidateLoss, enable_lora
@@ -89,6 +90,9 @@ def merge_adapter(student, layers):
 
 
 def prepare(args):
+    if args.prior:
+        reuse_heldout(args)
+        return
     student, layers, replay = load_student(args)
     splits_path = args.cache / 'splits.json'
     splits = read(splits_path)
@@ -115,16 +119,81 @@ def prepare(args):
     print('K3_HELDOUT_COMPLETE', result['mean_kl_per_token'], flush=True)
 
 
+def reuse_heldout(args):
+    previous = read(args.prior / 'heldout.json')
+    contract, replay = checked_replay(args.checkpoint, args.reference)
+    ready = read(args.checkpoint / 'ready.json')
+    if (ready['step'], ready['revision']) != (FINAL_STEP, contract['revision']):
+        raise ValueError('Checkpoint ready receipt differs from the replay contract')
+    replay['checkpoint'] = {'path': str(args.checkpoint), 'training_revision': contract['revision'],
+                            'adapter_sha256': sha256(args.checkpoint / 'adapter.pt'), 'step': FINAL_STEP}
+    split_path = args.cache / 'splits.json'
+    manifests = [sha256(args.cache / f'shard-{i}' / 'complete.json') for i in range(2)]
+    if (replay != previous['replay'] or previous['splits_sha256'] != sha256(split_path)
+            or previous['cache_manifests'] != manifests or previous['rollouts'] != 256
+            or previous['row_ids'] != read(split_path)['heldout']):
+        raise ValueError('Saved held-out metrics differ from the replay adapter or cache')
+    write_json(args.output / 'heldout.json', previous)
+    write_json(args.output / 'reused-heldout.json', {'source': str(args.prior), 'adapter': replay['checkpoint']})
+
+
+def check_dev(dev):
+    if (set(dev['benchmarks']) != {'aime24', 'aime25'} or dev['samples_per_problem'] != 8
+            or any(item['total'] != 240 for item in dev['benchmarks'].values())):
+        raise ValueError('Expected 480 matched AIME24/25 completions')
+
+
+def reuse_dev(args, step):
+    dev = args.prior / 'dev'
+    started = dev / 'started.json'
+    if not started.is_file():
+        return False
+    contract = read(started)
+    expected = {'checkpoint': str(args.prior / 'merged'), 'checkpoint_step': step, 'task': 'evaluate',
+                'seed': 0, 'dev': True, 'canary': False, 'inputs': str(args.inputs)}
+    if any(contract.get(key) != value for key, value in expected.items()):
+        raise ValueError('Saved generation contract differs from the requested dev evaluation')
+    journal = dev / f'eval-step-{step:04d}.jsonl'
+    summary = dev / f'eval-step-{step:04d}.json'
+    if journal.is_file():
+        args.resume_eval = journal
+    if not summary.is_file():
+        return False
+    receipt = read(summary)
+    check_dev(receipt)
+    retained = load_batches(journal, {name: range(30) for name in receipt['benchmarks']}, 8, 0, step)
+    records = [row for rows in retained.values() for row in rows]
+    for name, result in receipt['benchmarks'].items():
+        group = [row for row in records if row['benchmark'] == name]
+        if len(group) != result['total'] or sum(row['correct'] for row in group) != result['correct']:
+            raise ValueError('Saved dev summary differs from its sample journal')
+    args.output.mkdir()
+    write_json(args.output / summary.name, receipt)
+    (args.output / journal.name).write_bytes(journal.read_bytes())
+    return True
+
+
 def generate(args):
     result = read(args.output / 'heldout.json')
     step = FINAL_STEP if args.checkpoint else 0
     args.output = args.output / 'dev'
-    args.checkpoint = args.output.parent / 'merged' if result['replay'] else None
+    root = args.prior or args.output.parent
+    args.checkpoint = root / 'merged' if result['replay'] else None
     args.checkpoint_step, args.dev, args.seed, args.canary = step, True, 0, False
     args.batch_size, args.cap, args.steps, args.task = 128, 4096, 1, 'evaluate'
-    runner = Phase0(args)
-    runner.run_evaluation()
+    dev_saved = bool(args.prior and reuse_dev(args, step))
     rows = result['row_ids'][:FRESH_COUNT]
+    prior_fresh = root / 'fresh-rollouts.json'
+    if dev_saved and prior_fresh.is_file():
+        records = read(prior_fresh)
+        if [record['row_id'] for record in records] != rows:
+            raise ValueError('Saved fresh rollout IDs differ from the held-out subset')
+        write_json(args.output.parent / 'fresh-rollouts.json', records)
+        print('K3_REUSED_DEV_AND_FRESH', 480, len(records), flush=True)
+        return
+    runner = Phase0(args)
+    if not dev_saved:
+        runner.run_evaluation()
     prompts = [runner.render(runner.data[row]['prompt'], training=True) for row in rows]
     outputs = runner.generate(prompts, args.cap, 100000)
     records = []
@@ -145,9 +214,7 @@ def score(args):
         raise ValueError('Fresh rollout IDs differ from the held-out subset')
     step = FINAL_STEP if args.checkpoint else 0
     dev = read(args.output / 'dev' / f'eval-step-{step:04d}.json')
-    if (set(dev['benchmarks']) != {'aime24', 'aime25'} or dev['samples_per_problem'] != 8
-            or any(item['total'] != 240 for item in dev['benchmarks'].values())):
-        raise ValueError('Expected 480 matched AIME24/25 completions')
+    check_dev(dev)
     student, _, replay = load_student(args)
     if replay != heldout['replay']:
         raise ValueError('Adapter changed between eval stages')
@@ -173,9 +240,12 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--reference', type=Path)
+    parser.add_argument('--prior', type=Path)
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.reference):
         parser.error('Supply both the replayed adapter checkpoint and the original training run')
+    if args.prior and not args.checkpoint:
+        parser.error('A prior evaluation must match a replayed adapter checkpoint')
     uuid = str(torch.cuda.get_device_properties(0).uuid).lower().removeprefix('gpu-')
     if uuid != os.environ.get('SPEED_LIMIT_GPU_UUID', '').lower().removeprefix('gpu-'):
         raise RuntimeError('CUDA GPU UUID differs from requested device')

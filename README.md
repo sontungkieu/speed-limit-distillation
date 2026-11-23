@@ -252,6 +252,14 @@ LoRA-SGD rate whose mean held-out KL improves, fresh length does not increase
 and dev accuracy does not decrease relative to the initial student. These are
 strict point-estimate checks for this experiment.
 
+For an interrupted `gate-eval`, set `prior` to its previous case directory
+and choose a fresh queue directory. The replay adapter and cache must still
+match. Complete dev batches are reused, and a finished dev evaluation or
+fresh sample set can be reused without generating it again. A `gate-summary`
+stage can include `external_cases` by name with `receipt` and, for cases
+still in progress, an optional worker `state` path. The Gate requires seven
+matched case receipts in total.
+
 `scripts/schedule_k3_cutoff.py` can apply an earlier wall-clock deadline to
 already detached K3 and Gate 1 sessions. Pass the exact host and launch
 receipts. It verifies process identity, watches the owned sessions and their
