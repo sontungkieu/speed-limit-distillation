@@ -181,6 +181,13 @@ unbiasedness argument from arXiv:2605.07865 does not carry over to this replay
 regime. The sampled-token reward uses cached teacher log probabilities, while
 the baseline uses a frozen teacher forward pass on the same states.
 
+For a matched K2 sensitivity run at another K1 candidate rate, pass
+`--lr`, `--objective` and `--set-index` explicitly. The launcher supports
+`top64`, `control-full` and `control-top20` with the same fixed-state
+recipe. Give each GPU a fresh output directory and use `--deadline-epoch`
+for a common watchdog cutoff across detached workers. Compare with existing
+sampled and top64 runs only when LR, seed, optimizer and cache membership match.
+
 `scripts/run_k3.py` runs a first real-model K3 diagnostic. Roles 0–2 each use
 one B200 to measure the step-zero FP32 LoRA spectrum on one fixed state set.
 Each role checks sparse candidate logits against the full output head and
