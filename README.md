@@ -274,6 +274,13 @@ absolute cutoff on all workers, up to 30 hours from admission.
 baseline and terminal-step Gate 1 cases. Only groups with all three state sets
 receive a quality comparison.
 
+For the follow-up dev comparison in [configs/k3-budget.json](configs/k3-budget.json),
+schedule `budget-dev` stages with a `cap` of 2,048 or 4,096. Point each adapter
+stage at a verified replay `checkpoint`, `checkpoint_step` and original
+`reference`. A base stage omits these fields. The final `budget-summary` stage
+collects matched results, mean response length, and cap-hit fraction. It reports
+an adapter cohort average when all three state sets are available.
+
 `scripts/schedule_k3_cutoff.py` can apply an earlier wall-clock deadline to
 already detached K3 and Gate 1 sessions. Pass the exact host and launch
 receipts. It verifies process identity, watches the owned sessions and their

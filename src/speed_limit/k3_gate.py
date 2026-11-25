@@ -5,6 +5,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+from tempfile import TemporaryDirectory
 
 import torch
 
@@ -258,9 +259,48 @@ def prior_merged_path(root):
     return temporary if temporary.is_dir() else root / 'merged'
 
 
+def budget(args):
+    root = args.output
+    scratch = root / 'tmp'
+    scratch.mkdir()
+    step = args.checkpoint_step if args.checkpoint else 0
+    replay = None
+    with TemporaryDirectory(dir=scratch, prefix='weights-') as temporary:
+        if args.checkpoint:
+            student, layers, replay = load_student(args)
+            merge_adapter(student, layers)
+            merged = Path(temporary) / 'merged'
+            student.to(device='cpu', dtype=torch.bfloat16).save_pretrained(merged, safe_serialization=True)
+            del student
+            torch.cuda.empty_cache()
+            args.checkpoint = merged
+        args.output = root / 'dev'
+        args.checkpoint_step, args.dev, args.seed, args.canary = step, True, 0, False
+        args.batch_size, args.cap, args.steps, args.task = 128, 4096, 1, 'evaluate'
+        runner = Phase0(args)
+        runner.run_evaluation()
+        del runner
+    stem = f'eval-step-{step:04d}'
+    dev = read(args.output / f'{stem}.json')
+    check_dev(dev)
+    batches = load_batches(args.output / f'{stem}.jsonl', {name: range(30) for name in dev['benchmarks']}, 8, 0, step)
+    rows = [row for batch in batches.values() for row in batch]
+    cap = args.dev_max_tokens
+    if len(rows) != 480 or any(not 0 <= row['response_tokens'] <= cap for row in rows):
+        raise ValueError('Dev journal has incomplete samples or violates the token budget')
+    if any(sum(row['correct'] for row in rows if row['benchmark'] == name) != item['correct']
+           for name, item in dev['benchmarks'].items()):
+        raise ValueError('Dev summary does not match the journal')
+    total_tokens = sum(row['response_tokens'] for row in rows)
+    write_json(root / 'complete.json', {'cap': cap, 'replay': replay, 'dev': dev, 'samples': len(rows),
+                                       'mean_response_tokens': total_tokens / len(rows),
+                                       'capped': sum(row['finish_reason'] == 'length' for row in rows)})
+    print('K3_BUDGET_COMPLETE', cap, dev['mean_accuracy'], total_tokens / len(rows), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=('prepare', 'generate', 'score'))
+    parser.add_argument('stage', choices=('prepare', 'generate', 'score', 'budget'))
     for name in ('inputs', 'cache', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--checkpoint', type=Path)
@@ -268,6 +308,7 @@ def main():
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--prior', type=Path)
     parser.add_argument('--temporary-merge', action='store_true')
+    parser.add_argument('--dev-max-tokens', type=int, choices=(2048, 4096))
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.reference):
         parser.error('Supply both the replayed adapter checkpoint and the original training run')
@@ -275,12 +316,16 @@ def main():
         parser.error('A prior evaluation must match a replayed adapter checkpoint')
     if args.prior and args.temporary_merge:
         parser.error('Resume uses its existing merged-model directory')
+    if (args.stage == 'budget') != (args.dev_max_tokens is not None):
+        parser.error('Supply a dev token cap only for a budget evaluation')
+    if args.stage == 'budget' and args.prior:
+        parser.error('A budget evaluation requires a fresh journal')
     uuid = str(torch.cuda.get_device_properties(0).uuid).lower().removeprefix('gpu-')
     if uuid != os.environ.get('SPEED_LIMIT_GPU_UUID', '').lower().removeprefix('gpu-'):
         raise RuntimeError('CUDA GPU UUID differs from requested device')
-    if args.stage == 'prepare':
+    if args.stage in ('prepare', 'budget'):
         args.output.mkdir(parents=True, exist_ok=False)
-    {'prepare': prepare, 'generate': generate, 'score': score}[args.stage](args)
+    {'prepare': prepare, 'generate': generate, 'score': score, 'budget': budget}[args.stage](args)
 
 
 if __name__ == '__main__':

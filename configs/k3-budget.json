@@ -1,0 +1,15 @@
+{
+  "token_caps": [2048, 4096],
+  "benchmarks": ["aime24", "aime25"],
+  "samples_per_problem": 8,
+  "generation_seed": 0,
+  "state_sets": [0, 1, 2],
+  "include_initial_student": true,
+  "cohorts": [
+    {"lr": "3e-5", "step": 10, "reason": "Only frontier point that met all three preset quality checks"},
+    {"lr": "1e-4", "step": 300, "reason": "Highest original dev accuracy across the completed frontier"},
+    {"lr": "1e-3", "step": 200, "reason": "Earliest evaluated frontier checkpoint with half-absorption in all sets"}
+  ],
+  "report": ["accuracy_at_equal_cap", "observed_mean_response_tokens", "truncation_share"],
+  "scope": "Follow-up diagnostic for Gate 1. Equal limits do not force equal realized lengths. The original Phase 2 gate remains in force."
+}

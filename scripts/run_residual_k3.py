@@ -132,6 +132,79 @@ def gate_summary(queue, stage, path):
     save(path / 'complete.json', {'cases': metrics, 'means_by_lr': rates, 'baseline': metrics['base']})
 
 
+def budget_eval(queue, stage, path):
+    args = queue.a
+    argv = [queue.python, '-m', 'speed_limit.k3_gate', 'budget', '--inputs', str(args.inputs),
+            '--cache', str(args.cache), '--output', str(path), '--dev-max-tokens', str(stage['cap'])]
+    if stage.get('checkpoint'):
+        argv += ['--checkpoint', stage['checkpoint'], '--reference', stage['reference'],
+                 '--checkpoint-step', str(stage['checkpoint_step'])]
+    queue.check_gpu()
+    queue.invoke(stage['name'], command=argv)
+
+
+def budget_summary(queue, stage, path):
+    from speed_limit.queue import save
+
+    root = queue.a.run.parent
+    schedule = json.loads(queue.a.schedule.read_text())
+    cases = {}
+    for role, jobs in schedule.items():
+        directory = root / f'gpu-{role}'
+        for item in jobs:
+            if item['task'] == 'budget-dev':
+                name = item['name']
+                if name in cases:
+                    raise ValueError(f'Duplicate budget case: {name}')
+                cases[name] = (item, directory / name / 'complete.json', directory / f'role-{role}.json')
+    if not cases:
+        raise ValueError('No budget evaluation cases were scheduled')
+    pending = dict(cases)
+    checked, errors = {}, {}
+    path.mkdir()
+    while pending:
+        for name, (item, source, state_path) in list(pending.items()):
+            if source.is_file():
+                result = json.loads(source.read_text())
+                replay = result['replay']
+                if (result['cap'] != item['cap'] or result['samples'] != 480
+                        or (replay['checkpoint']['path'] if replay else None) != item.get('checkpoint')):
+                    raise ValueError(f'Budget case differs from schedule: {source}')
+                checked[name] = {**result, 'receipt': str(source)}
+                del pending[name]
+                continue
+            if state_path.is_file():
+                state = json.loads(state_path.read_text())
+                failure = (state.get('failures') or {}).get(name)
+                if failure or state['phase'] in ('complete', 'failed'):
+                    if source.is_file():
+                        continue
+                    errors[name] = failure or state['phase']
+                    del pending[name]
+        save(path / 'progress.json', {'completed': len(checked), 'expected': len(cases),
+                                      'pending': sorted(pending), 'failures': errors})
+        if pending:
+            queue.save(phase=stage['name'], pending_budget_cases=sorted(pending))
+            time.sleep(15)
+    groups = {}
+    for result in checked.values():
+        replay = result['replay']
+        family = 'base' if replay is None else f"{replay['lr']:.0e}@{replay['checkpoint']['step']}"
+        groups.setdefault((result['cap'], family), []).append(result)
+    comparison = []
+    for (cap, family), members in sorted(groups.items()):
+        if family != 'base' and {item['replay']['set_index'] for item in members} != {0, 1, 2}:
+            continue
+        if len(members) != (1 if family == 'base' else 3):
+            raise ValueError(f'Duplicate budget cohort: {cap}, {family}')
+        comparison.append({'cap': cap, 'family': family, 'runs': len(members),
+                           'dev_accuracy': mean(item['dev']['mean_accuracy'] for item in members),
+                           'mean_response_tokens': mean(item['mean_response_tokens'] for item in members),
+                           'capped_share': mean(item['capped'] / item['samples'] for item in members)})
+    save(path / 'complete.json', {'status': 'partial' if errors else 'complete', 'expected': len(cases),
+                                  'cases': checked, 'failures': errors, 'comparison': comparison})
+
+
 def residual_stage(queue, stage, path):
     args = queue.a
     task = stage['task']
@@ -190,6 +263,10 @@ def run(args):
                 gate_eval(queue, stage, path)
             elif stage['task'] == 'gate-summary':
                 gate_summary(queue, stage, path)
+            elif stage['task'] == 'budget-dev':
+                budget_eval(queue, stage, path)
+            elif stage['task'] == 'budget-summary':
+                budget_summary(queue, stage, path)
             else:
                 residual_stage(queue, stage, path)
             receipt = path / 'complete.json'
@@ -210,7 +287,7 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     for name in ('host', 'gpu', 'revision'):
         parser.add_argument('--' + name, required=True)
-    parser.add_argument('--role', type=int, choices=range(4), required=True)
+    parser.add_argument('--role', type=int, choices=range(8), required=True)
     duration = parser.add_mutually_exclusive_group()
     duration.add_argument('--seconds', type=int)
     duration.add_argument('--deadline-epoch', type=int)

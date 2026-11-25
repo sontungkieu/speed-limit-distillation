@@ -136,7 +136,8 @@ class Experiment:
         started = time.time()
         summary = {}
         samples = 1 if self.args.canary else (8 if self.args.dev else 32)
-        cap = 64 if self.args.canary else (16384 if self.args.dev else 32768)
+        dev_cap = getattr(self.args, 'dev_max_tokens', None) or 16384
+        cap = 64 if self.args.canary else (dev_cap if self.args.dev else 32768)
         saved = {}
         if getattr(self.args, 'resume_eval', None):
             from .eval_resume import load_batches
